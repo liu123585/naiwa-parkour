@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#ffd34d">
+<meta name="description" content="奶蛙跑酷 - 魔性奶蛙领衔的地铁跑酷高仿小游戏，左右变道、跳栏滑铲、悬浮板、喷射背包，还有东北雨姐等网红角色等你解锁！">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>奶蛙跑酷 · NAWA RUN</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ffd34d'/><circle cx='11' cy='13' r='4' fill='%23222'/><circle cx='21' cy='13' r='4' fill='%23222'/><path d='M7 21q9 8 18 0' stroke='%23222' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="ui" class="ui">
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hud hidden">
+    <div class="hud-row">
+      <div class="hud-left">
+        <div class="chip chip-score"><i class="ico ico-trophy"></i><b id="hudScore">0</b></div>
+        <div class="chip chip-coin"><i class="ico ico-coin"></i><b id="hudCoins">0</b></div>
+        <div class="chip chip-dist"><b id="hudDist">0</b><span>m</span></div>
+      </div>
+      <div class="hud-right">
+        <button id="btnBoard" class="icon-btn" title="悬浮板（空格）"><i class="ico ico-board"></i></button>
+        <button id="btnPause" class="icon-btn" title="暂停（P）"><i class="ico ico-pause"></i></button>
+      </div>
+    </div>
+    <div id="powerBar" class="power-bar"></div>
+    <div id="comboTag" class="combo-tag"></div>
+    <div id="toast" class="toast"></div>
+    <div class="pad">
+      <div class="pad-group">
+        <button id="padLeft" class="pad-btn pad-arrow"><i class="ico ico-left"></i></button>
+        <button id="padRight" class="pad-btn pad-arrow"><i class="ico ico-right"></i></button>
+      </div>
+      <div class="pad-group">
+        <button id="padRoll" class="pad-btn pad-roll"><i class="ico ico-roll"></i></button>
+        <button id="padJump" class="pad-btn pad-jump"><i class="ico ico-jump"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 主菜单 ============ -->
+  <div id="screenMenu" class="screen">
+    <div class="menu-bg-deco"></div>
+    <div class="menu-inner">
+      <div class="logo-wrap">
+        <div class="logo-sub">魔性奶蛙领衔 · 三跑道狂奔</div>
+        <h1 class="logo">奶蛙跑酷</h1>
+        <div class="logo-en">N A I W A &nbsp; R U N</div>
+      </div>
+
+      <div class="menu-hero">
+        <canvas id="heroCanvas" width="360" height="360"></canvas>
+        <div class="hero-shadow"></div>
+      </div>
+
+      <div class="menu-stats">
+        <div class="stat-pill"><i class="ico ico-trophy"></i><span>最高</span><b id="menuBest">0</b></div>
+        <div class="stat-pill"><i class="ico ico-coin"></i><b id="menuCoins">0</b></div>
+        <div class="stat-pill"><i class="ico ico-run"></i><span>总里程</span><b id="menuTotal">0</b><span>m</span></div>
+      </div>
+
+      <div class="menu-btns">
+        <button id="btnPlay" class="btn btn-primary btn-xl">开始跑酷</button>
+        <div class="menu-sub-btns">
+          <button id="btnChars" class="btn">角色商店</button>
+          <button id="btnMissions" class="btn">任务成就</button>
+          <button id="btnSettings" class="btn">设置</button>
+        </div>
+      </div>
+
+      <div class="menu-tip" id="menuTip"></div>
+      <div class="menu-foot">操作：← → 变道 · ↑ 跳 · ↓ 滑铲 · 空格 悬浮板 · P 暂停（手机可滑动屏幕或点按钮）</div>
+    </div>
+  </div>
+
+  <!-- ============ 角色商店 ============ -->
+  <div id="screenChars" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>角色商店</h2>
+        <div class="panel-coins"><i class="ico ico-coin"></i><b id="charsCoins">0</b></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-tabs">
+        <button class="tab active" data-tab="chars">角色</button>
+        <button class="tab" data-tab="skills">技能升级</button>
+      </div>
+      <div class="panel-body" id="charsBody"></div>
+      <div class="panel-note">角色形象均为卡通戏仿演绎，仅供娱乐。</div>
+    </div>
+  </div>
+
+  <!-- ============ 任务 / 成就 ============ -->
+  <div id="screenMissions" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>任务与成就</h2>
+        <div class="panel-coins"><i class="ico ico-coin"></i><b id="missionCoins">0</b></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-tabs">
+        <button class="tab active" data-tab="daily">每日任务</button>
+        <button class="tab" data-tab="ach">成就</button>
+      </div>
+      <div class="panel-body" id="missionsBody"></div>
+    </div>
+  </div>
+
+  <!-- ============ 设置 ============ -->
+  <div id="screenSettings" class="screen hidden">
+    <div class="panel panel-narrow">
+      <div class="panel-head">
+        <h2>设置</h2>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body">
+        <div class="setting-row"><span>音效</span><button class="switch on" id="setSfx"></button></div>
+        <div class="setting-row"><span>背景音乐</span><button class="switch on" id="setMusic"></button></div>
+        <div class="setting-row"><span>震动反馈</span><button class="switch on" id="setVibe"></button></div>
+        <div class="setting-row"><span>画质</span>
+          <div class="seg" id="setQuality">
+            <button data-q="high">高</button><button data-q="mid" class="on">中</button><button data-q="low">低</button>
+          </div>
+        </div>
+        <div class="setting-row"><span>操作提示</span><button class="switch on" id="setTips"></button></div>
+        <div class="panel-sep"></div>
+        <button class="btn btn-danger btn-block" id="btnWipe">清空存档（金币/角色/记录）</button>
+        <div class="about-text">
+          <b>奶蛙跑酷</b> v1.0 · 纯前端 HTML5 游戏，无后端、无第三方素材，音效由 Web Audio 实时合成。<br>
+          灵感来源：地铁跑酷玩法 + 网络迷因「奶蛙」。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 暂停 ============ -->
+  <div id="screenPause" class="screen screen-dim hidden">
+    <div class="pause-card">
+      <h2>已暂停</h2>
+      <div class="pause-stats">
+        <div><span>得分</span><b id="pauseScore">0</b></div>
+        <div><span>金币</span><b id="pauseCoins">0</b></div>
+        <div><span>距离</span><b id="pauseDist">0</b></div>
+      </div>
+      <button id="btnResume" class="btn btn-primary btn-block">继续跑</button>
+      <button id="btnRestart" class="btn btn-block">重新开始</button>
+      <button id="btnQuit" class="btn btn-ghost btn-block">回到主菜单</button>
+    </div>
+  </div>
+
+  <!-- ============ 结算 ============ -->
+  <div id="screenOver" class="screen screen-dim hidden">
+    <div class="over-card">
+      <div class="over-title" id="overTitle">被抓住了！</div>
+      <div class="over-quote" id="overQuote"></div>
+      <div class="over-score">
+        <span>本局得分</span>
+        <b id="overScore">0</b>
+        <em id="overBestTag"></em>
+      </div>
+      <div class="over-grid">
+        <div><span>距离</span><b id="overDist">0 m</b></div>
+        <div><span>金币</span><b id="overCoins">0</b></div>
+        <div><span>最高分</span><b id="overBest">0</b></div>
+        <div><span>倍数峰值</span><b id="overCombo">x1</b></div>
+      </div>
+      <div class="over-missions" id="overMissions"></div>
+      <div class="over-btns">
+        <button id="btnRevive" class="btn btn-primary btn-block hidden">花 <b id="reviveCost">200</b> 金币复活（<span id="reviveTimer">5</span>）</button>
+        <button id="btnAgain" class="btn btn-primary btn-block">再来一局</button>
+        <div class="over-row">
+          <button id="btnShare" class="btn">分享成绩</button>
+          <button id="btnMenu2" class="btn btn-ghost">主菜单</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 倒计时 / 提示 ============ -->
+  <div id="countdown" class="countdown hidden"><b>3</b></div>
+
+  <!-- ============ 加载 ============ -->
+  <div id="boot" class="boot">
+    <div class="boot-frog"><span></span><span></span></div>
+    <div class="boot-text">奶蛙正在热身…</div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/chars.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+<script>
+(function () {
+  function boot() {
+    try {
+      Game.init(document.getElementById('gl'));
+      window.addEventListener('pointerdown', function () { Sound.resume(); }, { once: true });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden && Game.state === 'run') Game.pause();
+      });
+      window.addEventListener('blur', function () {
+        if (Game.state === 'run') Game.pause();
+      });
+      // 防止移动端双击缩放 / 下拉刷新
+      document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+      document.body.addEventListener('touchmove', function (e) {
+        if (e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+
+      // 调试参数：?dev=run 直接开跑，god=1 无敌，theme=night 指定天气，warp=600 快进帧数
+      var qp = new URLSearchParams(location.search);
+      if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars')) {
+        setTimeout(function () {
+          if (qp.has('chars')) { UI.openPanel('chars'); return; }
+          if (qp.has('missions')) { UI.openPanel('missions'); return; }
+          Game.start();
+          if (qp.has('god')) Game.god = true;
+          Game.intro = 0.02;
+          if (qp.has('theme')) {
+            var th = THEMES[qp.get('theme')] || THEMES.day;
+            Game.theme = Game.themeFrom = Game.themeTo = th;
+            Game.themeT = 1;
+          }
+          var warp = parseInt(qp.get('warp') || '0', 10);
+          if (warp > 0) {
+            var t = Game.last;
+            for (var i = 0; i < warp; i++) { t += 16.7; Game.loop(t); }
+          }
+        }, 80);
+      }
+    } catch (err) {
+      var b = document.getElementById('boot');
+      if (b) b.innerHTML = '<div class="boot-text" style="max-width:80%;text-align:center;line-height:1.7">' +
+        '加载失败：' + (err && err.message ? err.message : err) + '<br>请用较新的 Chrome / Edge / Safari 打开</div>';
+      console.error(err);
+    }
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(boot, 0);
+  else window.addEventListener('DOMContentLoaded', boot);
+})();
+</script>
+</body>
+</html>
