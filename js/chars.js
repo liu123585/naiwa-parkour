@@ -494,11 +494,19 @@ CHARDRAW.naiwa = function (c, pose) {
   c.quadraticCurveTo(0, shY + 0.11, -0.125, shY + 0.05);
   c.closePath();
   PEN.shape(c, PEN.vertical(c, 0, shY + 0.06, shY - hipY + 0.14, bodyC.light, bodyC.base, bodyC.dark), lw);
-  // 肚皮
-  PEN.ell(c, 0, hipY + 0.015, 0.135, 0.105);
-  PEN.shape(c, bellyC, 0.008);
-  c.globalAlpha = 0.35; c.fillStyle = '#fff';
-  PEN.ell(c, -0.05, hipY + 0.05, 0.05, 0.035); c.fill(); c.globalAlpha = 1;
+  // 肚皮（仅正视可见，背视画背部纹理）
+  if (front) {
+    PEN.ell(c, 0, hipY + 0.015, 0.125, 0.10);
+    PEN.shape(c, bellyC, 0.008);
+    c.globalAlpha = 0.35; c.fillStyle = '#fff';
+    PEN.ell(c, -0.05, hipY + 0.05, 0.05, 0.035); c.fill(); c.globalAlpha = 1;
+  } else {
+    c.globalAlpha = 0.14; c.fillStyle = PEN.tone(bodyC.base, 0.72);
+    PEN.ell(c, 0, hipY + 0.03, 0.115, 0.085); c.fill();
+    c.globalAlpha = 0.18; c.fillStyle = '#fff';
+    PEN.ell(c, -0.045, hipY + 0.08, 0.055, 0.04); c.fill();
+    c.globalAlpha = 1;
+  }
   // 颈/头
   const headY = hy + 0.015;
   PEN.circle(c, 0, headY, hr);
@@ -592,10 +600,22 @@ CHARDRAW.nailong = (function () {
     pants: PEN.pal('#e8b81c'), shoe: PEN.pal('#e8b81c'), shoeSole: '#fff2c0',
     blush: '#ff9f9f', mouthType: 'smile', sleeveLen: 1.0,
     legW: 0.088, armW: 0.082, footW: 0.105, footH: 0.048,
-    clothDetail(c, R, bw, hw) {
-      // 奶白色肚皮
-      PEN.ell(c, 0, R.P.hipY + 0.055, bw * 0.52, (R.P.shoulderY - R.P.hipY) * 0.46);
-      PEN.shape(c, '#fff8d8', 0.009);
+    clothDetail(c, R, bw, hw, front) {
+      if (front) {
+        // 奶白色肚皮
+        PEN.ell(c, 0, R.P.hipY + 0.055, bw * 0.52, (R.P.shoulderY - R.P.hipY) * 0.46);
+        PEN.shape(c, '#fff8d8', 0.009);
+      } else {
+        // 背部鳞纹
+        c.globalAlpha = 0.5;
+        for (let i = 0; i < 3; i++) {
+          c.strokeStyle = PEN.tone('#ffd84a', 0.78); c.lineWidth = 0.009;
+          c.beginPath();
+          c.arc(0, R.P.hipY + 0.02 + i * 0.055, bw * 0.42, Math.PI * 0.15, Math.PI * 0.85);
+          c.stroke();
+        }
+        c.globalAlpha = 1;
+      }
     },
     /* 背上的小翅膀 */
     wing(c, R, back) {
