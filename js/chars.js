@@ -1,798 +1,1361 @@
 /* =========================================================
-   奶蛙跑酷 · 角色「建模」与动画
-   所有角色均为代码矢量绘制（无外部素材）。
-   坐标空间：归一化骨架空间 —— 脚底 y=0，头顶 y≈1，y 轴向上。
+   奶蛙跑酷 · 角色「建模」与动画 v2
+   —— 全部由代码矢量绘制：线稿描边 + 体积渐变 + 完整骨骼 + 面部细节
+   坐标空间：脚底 y=0，头顶 y≈1，y 轴向上（背视 / 正视共用同一套骨架）
    ========================================================= */
 'use strict';
 
-const CharArt = {
-  /* ---------- 基础图形工具 ---------- */
-  ell(c, x, y, rx, ry) { c.beginPath(); c.ellipse(x, y, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2); c.fill(); },
-  circ(c, x, y, r) { c.beginPath(); c.arc(x, y, Math.abs(r), 0, Math.PI * 2); c.fill(); },
+/* ---------------- 画笔工具 ---------------- */
+const PEN = {
+  line: '#2a2320',
+
+  circle(c, x, y, r) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); },
+  ell(c, x, y, rx, ry, rot) { c.beginPath(); c.ellipse(x, y, Math.abs(rx), Math.abs(ry), rot || 0, 0, Math.PI * 2); },
   rr(c, x, y, w, h, r) {
-    r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    r = Math.min(Math.abs(r), Math.abs(w) / 2, Math.abs(h) / 2);
+    const y2 = y + h;
     c.beginPath();
     c.moveTo(x + r, y);
     c.lineTo(x + w - r, y);
-    c.quadraticCurveTo(x + w, y, x + w, y - r);
-    c.lineTo(x + w, y - h + r);
-    c.quadraticCurveTo(x + w, y - h, x + w - r, y - h);
-    c.lineTo(x + r, y - h);
-    c.quadraticCurveTo(x, y - h, x, y - h + r);
-    c.lineTo(x, y - r);
+    c.quadraticCurveTo(x + w, y, x + w, y + r);
+    c.lineTo(x + w, y2 - r);
+    c.quadraticCurveTo(x + w, y2, x + w - r, y2);
+    c.lineTo(x + r, y2);
+    c.quadraticCurveTo(x, y2, x, y2 - r);
+    c.lineTo(x, y + r);
     c.quadraticCurveTo(x, y, x + r, y);
-    c.closePath(); c.fill();
+    c.closePath();
   },
-  /* 两点之间的胶囊（用于四肢） */
-  capsule(c, x0, y0, x1, y1, w, color) {
-    c.fillStyle = color;
-    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 0.001;
-    const a = Math.atan2(dy, dx);
-    c.save(); c.translate(x0, y0); c.rotate(a);
-    this.rr(c, 0, w / 2, len, w, w / 2);
-    c.restore();
-    this.circ(c, x0, y0, w / 2);
-    this.circ(c, x1, y1, w / 2);
-  },
-  shade(c, x, y, r, col, a) {
-    const g = c.createRadialGradient(x, y, r * 0.1, x, y, r);
-    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.globalAlpha = a == null ? 0.5 : a; c.fillStyle = g;
-    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
-  },
-
-  /* ---------- 姿势计算 ---------- */
-  makeRig(pose) {
-    const st = pose.state || 'run';
-    const ph = (pose.t || 0) * Math.PI * 2;
-    const s1 = Math.sin(ph), s2 = Math.sin(ph + Math.PI);
-    const rig = {
-      lean: pose.lean || 0, squash: pose.squash || 0, phase: ph,
-      hipY: 0.45, shoulderY: 0.72, headY: 0.875, headR: 0.135,
-      bodyW: 0.30, legLift: [0, 0], armSwing: [0, 0], rot: 0, bob: 0, tuck: 0,
-    };
-    if (st === 'jump' || st === 'fall') {
-      const up = st === 'jump';
-      rig.legLift = [up ? 0.20 : 0.05, up ? 0.10 : 0.16];
-      rig.armSwing = [up ? -0.9 : -0.3, up ? -0.7 : -0.4];
-      rig.bob = 0.02;
-    } else if (st === 'roll') {
-      rig.tuck = 1; rig.rot = (pose.t || 0) * Math.PI * 2; rig.bob = 0;
-    } else if (st === 'fly') {
-      rig.legLift = [0.16, 0.08]; rig.armSwing = [-1.05, -0.95]; rig.bob = 0.01 + s1 * 0.008;
-    } else if (st === 'crash') {
-      rig.rot = -0.7; rig.legLift = [0.3, 0.1]; rig.armSwing = [-1.2, -1.1];
-    } else if (st === 'idle') {
-      rig.legLift = [0, 0]; rig.armSwing = [0.05, -0.05];
-      rig.bob = 0.012 + Math.sin(ph) * 0.012;
-    } else { // run
-      rig.legLift = [Math.max(0, s1) * 0.22, Math.max(0, s2) * 0.22];
-      rig.armSwing = [-s1 * 0.75, -s2 * 0.75];
-      rig.bob = 0.014 + Math.abs(Math.cos(ph)) * 0.022;
-    }
-    rig.bob -= rig.squash * 0.06;
-    return rig;
-  },
-
-  /* ---------- 人形骨架（背视/正视通用） ---------- */
-  drawBody(c, rig, st, face, parts) {
-    const P = parts;
-    const lean = rig.lean;
-    c.save();
-    if (rig.tuck) {
-      c.translate(0, 0.42);
-      c.rotate(rig.rot);
-      c.scale(0.92, 0.92);
-      c.translate(0, -0.42);
-    } else if (rig.rot) {
-      c.translate(0, 0.30); c.rotate(rig.rot); c.translate(0, -0.30);
-    }
-    c.translate(lean * 0.05, rig.bob);
-
-    const hipY = rig.hipY, shY = rig.shoulderY, hR = rig.headR, hY = rig.headY;
-    const w = rig.bodyW;
-
-    /* ---- 腿 ---- */
-    for (let i = 0; i < 2; i++) {
-      const sgn = i === 0 ? -1 : 1;
-      const lift = rig.legLift[i];
-      const hx = sgn * w * 0.24;
-      const footX = hx + sgn * 0.022 + lift * sgn * 0.03;
-      const footY = lift * 0.30;
-      const kneeX = hx + (footX - hx) * 0.45;
-      const kneeY = (hipY + footY) * 0.5 + 0.045 + lift * 0.05;
-      c.fillStyle = P.pants;
-      this.capsule(c, hx, hipY, kneeX, kneeY, 0.088, P.pants);
-      this.capsule(c, kneeX, kneeY, footX, footY + 0.032, 0.072, P.pants2 || P.pants);
-      // 鞋
-      c.fillStyle = P.shoe;
-      this.rr(c, footX - 0.052, footY + 0.05, 0.104, 0.05, 0.024);
-      this.circ(c, footX, footY + 0.045, 0.05);
-      if (P.shoeSole) { c.fillStyle = P.shoeSole; this.rr(c, footX - 0.055, footY + 0.018, 0.11, 0.016, 0.008); }
-    }
-
-    /* ---- 后侧手臂（先画，被身体遮一点） ---- */
-    const armLen = P.armLen || 0.30;
-    const drawArm = (sgn, swing) => {
-      const sx = sgn * (w * 0.5 + 0.012);
-      const handX = sx + sgn * 0.035 + swing * 0.028;
-      const handY = shY - armLen + Math.abs(swing) * 0.055 - Math.max(0, -swing) * 0.05;
-      const elbX = sx + sgn * 0.03 + swing * 0.016;
-      const elbY = (shY + handY) / 2 + 0.012;
-      this.capsule(c, sx, shY - 0.02, elbX, elbY, 0.072, P.sleeve);
-      this.capsule(c, elbX, elbY, handX, handY, 0.062, P.skin);
-      this.circ(c, handX, handY, 0.045);
-      return { x: handX, y: handY };
-    };
-    c.fillStyle = P.sleeve;
-    const hand0 = drawArm(-1, rig.armSwing[0]);
-
-    /* ---- 躯干 ---- */
-    const bodyGrad = c.createLinearGradient(-w / 2, 0, w / 2, 0);
-    bodyGrad.addColorStop(0, P.clothDark);
-    bodyGrad.addColorStop(0.35, P.cloth);
-    bodyGrad.addColorStop(0.75, P.cloth);
-    bodyGrad.addColorStop(1, P.clothDark);
-    c.fillStyle = bodyGrad;
+  /* 胶囊路径（用于四肢） */
+  cap(c, x0, y0, x1, y1, w) {
+    const r = w / 2;
+    const a = Math.atan2(y1 - y0, x1 - x0);
     c.beginPath();
-    c.moveTo(-w * 0.52, shY + 0.02);
-    c.quadraticCurveTo(-w * 0.62, (shY + hipY) / 2, -w * 0.46, hipY - 0.035);
-    c.lineTo(w * 0.46, hipY - 0.035);
-    c.quadraticCurveTo(w * 0.62, (shY + hipY) / 2, w * 0.52, shY + 0.02);
-    c.quadraticCurveTo(0, shY + 0.075, -w * 0.52, shY + 0.02);
-    c.closePath(); c.fill();
+    c.arc(x0, y0, r, a + Math.PI / 2, a - Math.PI / 2);
+    c.arc(x1, y1, r, a - Math.PI / 2, a + Math.PI / 2);
+    c.closePath();
+  },
+  /* 沿轴向的柱面渐变（光从左上来） */
+  cyl(c, x0, y0, x1, y1, w, light, base, dark) {
+    let a = Math.atan2(y1 - y0, x1 - x0);
+    const nx = Math.sin(a), ny = -Math.cos(a);   // 光的另一侧
+    const g = c.createLinearGradient(x0 + nx * w * 0.5, y0 + ny * w * 0.5, x0 - nx * w * 0.5, y0 - ny * w * 0.5);
+    g.addColorStop(0, dark); g.addColorStop(0.45, base); g.addColorStop(1, light);
+    return g;
+  },
+  /* 球形渐变（头/身体） */
+  ball(c, x, y, r, light, base, dark) {
+    const g = c.createRadialGradient(x - r * 0.35, y + r * 0.4, r * 0.1, x, y, r * 1.05);
+    g.addColorStop(0, light); g.addColorStop(0.55, base); g.addColorStop(1, dark);
+    return g;
+  },
+  vertical(c, x, y, h, top, base, bottom) {
+    const g = c.createLinearGradient(x, y - h, x, y);
+    g.addColorStop(0, top); g.addColorStop(0.5, base); g.addColorStop(1, bottom);
+    return g;
+  },
+  cylFill(c, x0, y0, x1, y1, w, col, lw) {
+    PEN.cap(c, x0, y0, x1, y1, w);
+    c.fillStyle = col; c.fill();
+    if (lw) { c.strokeStyle = PEN.line; c.lineWidth = lw; c.stroke(); }
+  },
+  shape(c, fill, lw) {
+    c.fillStyle = fill; c.fill();
+    if (lw !== 0) { c.strokeStyle = PEN.line; c.lineWidth = lw || 0.013; c.stroke(); }
+  },
+  /* 明暗色调 */
+  tone(hex, k) {
+    const p = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, Math.round(((p >> 16) & 255) * k)));
+    const g = Math.max(0, Math.min(255, Math.round(((p >> 8) & 255) * k)));
+    const b = Math.max(0, Math.min(255, Math.round((p & 255) * k)));
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  },
+  pal(base) {
+    return { base: base, light: PEN.tone(base, 1.22), dark: PEN.tone(base, 0.68), deeper: PEN.tone(base, 0.45) };
+  },
+};
 
-    // 腰带 / 下摆
-    if (P.belt) { c.fillStyle = P.belt; this.rr(c, -w * 0.48, hipY + 0.055, w * 0.96, 0.045, 0.012); }
-    if (P.clothPattern) P.clothPattern(c, w, hipY, shY);
-    if (P.backDecal && !face) P.backDecal(c, w, hipY, shY);
+/* ---------------- 骨架参数 ---------------- */
+const PROP = {
+  /* 头身比偏卡通（头大、腿短）更有亲和力 */
+  human: { hipY: 0.415, shoulderY: 0.690, headR: 0.145, shoulderW: 0.099, hipW: 0.071, leg: 0.415, build: 1, neck: 0.036 },
+  burly: { hipY: 0.395, shoulderY: 0.665, headR: 0.132, shoulderW: 0.130, hipW: 0.086, leg: 0.395, build: 1.18, neck: 0.032 },
+  slim: { hipY: 0.435, shoulderY: 0.705, headR: 0.140, shoulderW: 0.092, hipW: 0.066, leg: 0.435, build: 0.94, neck: 0.04 },
+  chibi: { hipY: 0.335, shoulderY: 0.575, headR: 0.200, shoulderW: 0.098, hipW: 0.078, leg: 0.335, build: 1, neck: 0.018 },
+  tall: { hipY: 0.43, shoulderY: 0.71, headR: 0.138, shoulderW: 0.106, hipW: 0.074, leg: 0.43, build: 1.02, neck: 0.038 },
+};
 
-    // 肩膀圆润
-    c.fillStyle = P.cloth;
-    this.circ(c, -w * 0.47, shY, 0.055);
-    this.circ(c, w * 0.47, shY, 0.055);
+const CharArt = {
+  /* 计算骨骼位置（含跑步循环） */
+  rig(pose, prop) {
+    const P = Object.assign({}, PROP.human, prop || {});
+    const state = pose.state || 'run';
+    const ph = (pose.t || 0) * Math.PI * 2;
+    const tw = Math.sin(ph * 2) * 0.05;
+    P.headY = P.shoulderY + P.neck + P.headR;   // 头部中心（写回体型参数，供各角色绘制使用）
+    const R = {
+      P: P, state: state, ph: ph,
+      hipY: P.hipY, shoulderY: P.shoulderY, headR: P.headR,
+      headY: P.headY,
+      twist: 0, sway: 0, bob: 0, squash: pose.squash || 0, rot: 0, tuck: 0,
+      legs: [], arms: [], lean: pose.lean || 0, front: !!pose.front,
+    };
+    const legAt = (i, lift, swing, bend) => {
+      const sgn = i ? 1 : -1;
+      const hipX = sgn * P.hipW;
+      const ankleY = Math.max(0.012, 0.05 + lift * P.leg * 0.80);
+      const ankleX = hipX + swing * 0.034 + sgn * 0.006;
+      const kneeX = hipX + swing * 0.016;
+      const kneeY = (P.hipY + ankleY) * 0.5 + 0.045 + lift * 0.03 + bend;
+      return { hipX: hipX, hipY: P.hipY, kneeX: kneeX, kneeY: kneeY, ankleX: ankleX, ankleY: ankleY, lift: lift, sgn: sgn };
+    };
+    const armAt = (i, swing, bend) => {
+      const sgn = i ? 1 : -1;
+      const shX = sgn * (P.shoulderW * 0.98);
+      const shY = P.shoulderY - 0.012;
+      const len = 0.30 * (0.9 + P.build * 0.1);
+      const handY = shY - len + Math.max(0, swing) * 0.055 - bend * 0.03;
+      const handX = shX + sgn * 0.012 + swing * 0.042;
+      const elbX = shX + sgn * 0.022 + swing * 0.026;
+      const elbY = (shY + handY) * 0.5 - 0.004 + bend * 0.01;
+      return { shX: shX, shY: shY, elbX: elbX, elbY: elbY, handX: handX, handY: handY, sgn: sgn };
+    };
 
-    /* ---- 头 ---- */
-    const headX = lean * 0.02;
-    c.fillStyle = P.skin;
-    if (P.headShape) P.headShape(c, headX, hY, hR);
-    else { this.circ(c, headX, hY + 0.005, hR); this.rr(c, headX - hR * 0.92, hY, hR * 1.84, hR * 1.05, hR * 0.6); }
-    // 颈部
-    c.fillStyle = P.skin;
-    this.capsule(c, headX, hY - hR * 0.92, headX, shY + 0.02, 0.075, P.skin);
+    if (state === 'jump' || state === 'fall') {
+      const up = state === 'jump';
+      R.legs = [legAt(0, up ? 0.85 : 0.25, up ? 0.5 : -0.55, up ? 0.05 : 0), legAt(1, up ? 0.35 : 0.6, up ? -0.4 : 0.45, 0.02)];
+      R.arms = [armAt(0, up ? -1.05 : -0.35, 0.02), armAt(1, up ? -0.85 : -0.5, 0.03)];
+      R.bob = 0.015;
+      R.twist = up ? 0.04 : -0.04;
+    } else if (state === 'roll') {
+      R.tuck = 1; R.rot = (pose.t || 0) * Math.PI * 2; R.bob = 0;
+      R.legs = [legAt(0, 0.7, 0.25, 0.06), legAt(1, 0.7, 0.25, 0.06)];
+      R.arms = [armAt(0, -0.9, 0.06), armAt(1, -0.9, 0.06)];
+    } else if (state === 'fly') {
+      R.legs = [legAt(0, 0.45, -0.35, 0.02), legAt(1, 0.3, -0.15, 0.02)];
+      R.arms = [armAt(0, -1.1, 0.02), armAt(1, -1.0, 0.02)];
+      R.bob = 0.01 + Math.sin(ph) * 0.01;
+    } else if (state === 'crash') {
+      R.rot = -0.75; R.legs = [legAt(0, 0.8, 0.5, 0.05), legAt(1, 0.45, -0.2, 0.02)];
+      R.arms = [armAt(0, -1.25, 0.05), armAt(1, -1.15, 0.05)];
+    } else if (state === 'idle') {
+      R.legs = [legAt(0, 0, 0, 0.005), legAt(1, 0, 0, 0.005)];
+      R.arms = [armAt(0, 0.06, 0.03), armAt(1, -0.06, 0.03)];
+      R.bob = 0.012 + Math.sin(ph) * 0.014;
+      R.twist = Math.sin(ph * 0.5) * 0.02;
+    } else {  // run
+      const s0 = Math.sin(ph), s1 = Math.sin(ph + Math.PI);
+      R.legs = [legAt(0, Math.max(0, Math.sin(ph - 0.5)), s0, 0), legAt(1, Math.max(0, Math.sin(ph + Math.PI - 0.5)), s1, 0)];
+      R.arms = [armAt(0, -s0, 0.02), armAt(1, -s1, 0.02)];
+      R.bob = 0.016 + Math.abs(Math.cos(ph)) * 0.02;
+      R.twist = -tw;
+      R.sway = s0 * 0.008;
+    }
+    R.bob -= R.squash * 0.05;
+    return R;
+  },
 
-    if (face) this.drawFace(c, headX, hY, hR, P);
-    else this.drawBackHead(c, headX, hY, hR, P);
+  /* ---------------- 人形角色绘制 ---------------- */
+  human(c, pose, S) {
+    const R = this.rig(pose, S._prop);
+    const P = R.P;
+    const front = R.front;
+    const line = PEN.line;
+    const lw = 0.0125;
 
-    /* ---- 头饰 / 头发 ---- */
-    if (P.hair) P.hair(c, headX, hY, hR, face);
+    c.save();
+    if (R.tuck) { c.translate(0, 0.40); c.rotate(R.rot); c.translate(0, -0.40); }
+    else if (R.rot) { c.translate(0, 0.28); c.rotate(R.rot); c.translate(0, -0.28); }
+    c.translate(R.sway + R.lean * 0.03, R.bob);
 
-    /* ---- 前侧手臂 ---- */
-    const hand1 = drawArm(1, rig.armSwing[1]);
-    c.fillStyle = P.sleeve;
+    const drawLeg = (L, back) => {
+      const pant = back ? S.pantsBack : S.pants;
+      const skin = S.skin;
+      // 大腿
+      PEN.cap(c, L.hipX, L.hipY, L.kneeX, L.kneeY, S.legW * 1.06);
+      PEN.shape(c, PEN.cyl(c, L.hipX, L.hipY, L.kneeX, L.kneeY, S.legW * 1.06, pant.light, pant.base, pant.dark), lw);
+      // 小腿（裤脚或皮肤）
+      const shinCol = (S.shorts || L.lift > 0.45) ? skin : pant;
+      PEN.cap(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY + S.footH * 0.5, S.legW * 0.86);
+      PEN.shape(c, PEN.cyl(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY, S.legW * 0.86, shinCol.light, shinCol.base, shinCol.dark), lw);
+      // 裤脚/袜口
+      if (!S.shorts && L.lift <= 0.45) {
+        PEN.cap(c, L.ankleX, L.ankleY + 0.075, L.ankleX, L.ankleY + 0.055, S.legW * 0.92);
+        PEN.shape(c, pant.dark, 0);
+      }
+      // 鞋
+      const shoe = back ? S.shoeDark : S.shoe;
+      const fy = L.ankleY;
+      c.save();
+      c.translate(L.ankleX, fy + S.footH * 0.5);
+      c.rotate(L.sgn * 0.05 - L.lift * 0.15);
+      PEN.rr(c, -S.footW * 0.5, -S.footH * 0.5, S.footW, S.footH, S.footH * 0.4);
+      PEN.shape(c, PEN.ball(c, 0, 0, S.footW * 0.5, shoe.light, shoe.base, shoe.dark), lw);
+      PEN.rr(c, -S.footW * 0.46, S.footH * 0.06, S.footW * 0.92, S.footH * 0.34, S.footH * 0.16);
+      PEN.shape(c, S.shoeSole || '#e8e4dc', 0);
+      if (L.lift > 0.35) {   // 抬脚时露出鞋底
+        PEN.rr(c, -S.footW * 0.40, -S.footH * 0.62, S.footW * 0.8, S.footH * 0.3, S.footH * 0.14);
+        PEN.shape(c, PEN.tone(S.shoeSole || '#e8e4dc', 0.72), 0);
+      }
+      c.restore();
+    };
 
-    /* ---- 道具（手部） ---- */
-    if (P.handProp) P.handProp(c, hand1, 1, rig);
-    if (P.handProp2) P.handProp2(c, hand0, -1, rig);
-    if (P.bodyProp) P.bodyProp(c, w, hipY, shY, rig);
+    const drawArm = (A, back, isBack) => {
+      const sleeve = back ? S.sleeveBack : S.sleeve;
+      // 上臂（袖子）
+      const sleeveLen = S.sleeveLen == null ? 0.62 : S.sleeveLen;
+      const midX = A.shX + (A.elbX - A.shX) * sleeveLen, midY = A.shY + (A.elbY - A.shY) * sleeveLen;
+      PEN.cap(c, A.shX, A.shY, midX, midY, S.armW * 1.04);
+      PEN.shape(c, PEN.cyl(c, A.shX, A.shY, midX, midY, S.armW * 1.04, sleeve.light, sleeve.base, sleeve.dark), lw);
+      // 袖子收口
+      PEN.cap(c, midX, midY, midX + (A.elbX - midX) * 0.18, midY + (A.elbY - midY) * 0.18, S.armW * 1.12);
+      PEN.shape(c, sleeve.dark, 0);
+      // 前臂（皮肤）
+      PEN.cap(c, midX, midY, A.elbX, A.elbY, S.armW * 0.84);
+      PEN.shape(c, PEN.cyl(c, midX, midY, A.elbX, A.elbY, S.armW * 0.84, S.skin.light, S.skin.base, S.skin.dark), lw);
+      PEN.cap(c, A.elbX, A.elbY, A.handX, A.handY, S.armW * 0.74);
+      PEN.shape(c, PEN.cyl(c, A.elbX, A.elbY, A.handX, A.handY, S.armW * 0.74, S.skin.light, S.skin.base, S.skin.dark), lw);
+      // 手
+      c.save();
+      c.translate(A.handX, A.handY);
+      c.rotate(-A.sgn * 0.3);
+      PEN.rr(c, -0.036, -0.030, 0.072, 0.070, 0.03);
+      PEN.shape(c, PEN.ball(c, 0, 0, 0.05, S.skin.light, S.skin.base, S.skin.dark), lw * 0.9);
+      c.restore();
+      if (isBack ? S.propBack : S.prop) {
+        if (isBack) S.propBack(c, A, true); else S.prop(c, A, false);
+      }
+    };
+
+    // 后侧四肢 → 躯干 → 前侧四肢（产生前后层次）
+    drawLeg(R.legs[0], true);
+    drawArm(R.arms[0], true, true);
+    if (S.wing) S.wing(c, R, true);
+
+    // 躯干（含上身扭转）
+    c.save();
+    c.translate(0, P.hipY);
+    c.rotate(R.twist);
+    c.translate(0, -P.hipY);
+    const bw = P.shoulderW * 1.28 * P.build, hw = P.hipW * 1.5 * P.build;
+    c.beginPath();
+    c.moveTo(-bw, P.shoulderY + 0.012);
+    c.quadraticCurveTo(-bw * 1.06, P.shoulderY - (P.shoulderY - P.hipY) * 0.45, -hw, P.hipY - 0.028);
+    c.quadraticCurveTo(0, P.hipY - 0.062, hw, P.hipY - 0.028);
+    c.quadraticCurveTo(bw * 1.06, P.shoulderY - (P.shoulderY - P.hipY) * 0.45, bw, P.shoulderY + 0.012);
+    c.quadraticCurveTo(0, P.shoulderY + 0.062, -bw, P.shoulderY + 0.012);
+    c.closePath();
+    PEN.shape(c, PEN.vertical(c, 0, P.shoulderY + 0.03, P.shoulderY - P.hipY + 0.09, S.cloth.light, S.cloth.base, S.cloth.dark), lw);
+    if (S.clothDetail) S.clothDetail(c, R, bw, hw, front);
+    // 肩部
+    for (const sgn of [-1, 1]) {
+      PEN.circle(c, sgn * bw * 0.98, P.shoulderY, S.armW * 0.62);
+      PEN.shape(c, PEN.ball(c, sgn * bw * 0.98, P.shoulderY, S.armW * 0.62, S.cloth.light, S.cloth.base, S.cloth.dark), lw * 0.9);
+    }
+    // 脖子
+    PEN.cap(c, 0, P.shoulderY + 0.005, 0, P.shoulderY + P.neck + P.headR * 0.35, P.headR * 0.62);
+    PEN.shape(c, PEN.vertical(c, 0, P.shoulderY + 0.06, P.neck + P.headR * 0.3, S.skin.dark, S.skin.base, S.skin.dark), lw * 0.9);
+    // 头
+    const hy = P.headY, hr = P.headR;
+    PEN.circle(c, 0, hy, hr);
+    PEN.shape(c, PEN.ball(c, 0, hy, hr, S.skin.light, S.skin.base, S.skin.dark), lw);
+    // 下颌/脸颊
+    PEN.ell(c, 0, hy - hr * 0.52, hr * 0.82, hr * 0.5);
+    PEN.shape(c, PEN.ball(c, 0, hy - hr * 0.5, hr * 0.7, S.skin.light, S.skin.base, S.skin.dark), lw * 0.8);
+    if (front) S.face ? S.face(c, 0, hy, hr, R) : this.face(c, 0, hy, hr, S, R);
+    else S.backHead ? S.backHead(c, 0, hy, hr, R) : this.backHead(c, 0, hy, hr, S);
+    if (S.hair) S.hair(c, 0, hy, hr, front, R);
+    if (S.headwear) S.headwear(c, 0, hy, hr, front, R);
+    c.restore();
+
+    if (S.wing) S.wing(c, R, false);
+    drawLeg(R.legs[1], false);
+    drawArm(R.arms[1], false, false);
 
     c.restore();
   },
 
-  drawFace(c, x, y, r, P) {
-    const eyeY = y + r * 0.06, ex = r * 0.40;
-    c.fillStyle = '#fff';
-    this.ell(c, x - ex, eyeY, r * 0.26, r * 0.28);
-    this.ell(c, x + ex, eyeY, r * 0.26, r * 0.28);
-    c.fillStyle = '#20232a';
-    this.circ(c, x - ex + r * 0.03, eyeY, r * 0.125);
-    this.circ(c, x + ex + r * 0.03, eyeY, r * 0.125);
-    c.fillStyle = 'rgba(255,255,255,.9)';
-    this.circ(c, x - ex + r * 0.07, eyeY + r * 0.06, r * 0.045);
-    this.circ(c, x + ex + r * 0.07, eyeY + r * 0.06, r * 0.045);
-    // 腮红
-    if (P.blush !== false) {
-      c.globalAlpha = 0.35; c.fillStyle = '#ff7b7b';
-      this.ell(c, x - r * 0.62, y - r * 0.22, r * 0.18, r * 0.11);
-      this.ell(c, x + r * 0.62, y - r * 0.22, r * 0.18, r * 0.11);
-      c.globalAlpha = 1;
+  /* 通用正脸 */
+  face(c, x, y, r, S, R) {
+    const eyeY = y + r * 0.08, ex = r * 0.42;
+    const blink = (R && R.state === 'crash') ? 1 : 0;
+    for (const sgn of [-1, 1]) {
+      // 眼白
+      PEN.ell(c, x + sgn * ex, eyeY, r * 0.24, blink ? r * 0.05 : r * 0.27);
+      PEN.shape(c, '#fffdf8', 0.009);
+      if (!blink) {
+        PEN.circle(c, x + sgn * ex + r * 0.04, eyeY - r * 0.01, r * 0.145);
+        PEN.shape(c, '#2b2521', 0.007);
+        PEN.circle(c, x + sgn * ex + r * 0.09, eyeY + r * 0.07, r * 0.05);
+        PEN.shape(c, 'rgba(255,255,255,.95)', 0);
+      }
+      // 眉毛
+      c.save();
+      c.translate(x + sgn * ex, eyeY + r * 0.36);
+      c.rotate(sgn * 0.13);
+      PEN.rr(c, -r * 0.17, -r * 0.035, r * 0.34, r * 0.07, r * 0.035);
+      PEN.shape(c, S.brow || '#3a2f2a', 0);
+      c.restore();
+    }
+    // 鼻
+    if (S.nose !== false) {
+      PEN.ell(c, x, y - r * 0.12, r * 0.07, r * 0.05);
+      PEN.shape(c, PEN.tone(S.skin.base, 0.86), 0);
     }
     // 嘴
-    c.strokeStyle = '#20232a'; c.lineWidth = r * 0.11; c.lineCap = 'round';
-    c.beginPath();
-    if (P.bigMouth) { c.arc(x, y - r * 0.05, r * 0.46, Math.PI * 1.06, Math.PI * 1.94); }
-    else { c.arc(x, y - r * 0.16, r * 0.32, Math.PI * 0.18, Math.PI * 0.82); }
-    c.stroke();
-    if (P.faceExtras) P.faceExtras(c, x, y, r);
-  },
-
-  drawBackHead(c, x, y, r, P) {
-    // 后脑：简单的高光 + 耳朵
-    if (P.ears !== false) {
-      c.fillStyle = P.skin;
-      this.circ(c, x - r * 0.95, y - r * 0.05, r * 0.2);
-      this.circ(c, x + r * 0.95, y - r * 0.05, r * 0.2);
+    c.save();
+    c.strokeStyle = S.mouth || '#5a3b32'; c.lineWidth = r * 0.09; c.lineCap = 'round';
+    if (S.mouthType === 'laugh') {
+      c.beginPath(); c.arc(x, y - r * 0.30, r * 0.36, Math.PI * 0.12, Math.PI * 0.88, false); c.stroke();
+      c.fillStyle = '#6b3a30'; c.beginPath();
+      c.moveTo(x - r * 0.4, y - r * 0.24);
+      c.quadraticCurveTo(x, y - r * 0.78, x + r * 0.4, y - r * 0.24);
+      c.quadraticCurveTo(x, y - r * 0.02, x - r * 0.4, y - r * 0.24);
+      c.closePath(); c.fill();
+      c.fillStyle = '#fffdf3';
+      PEN.rr(c, x - r * 0.30, y - r * 0.40, r * 0.60, r * 0.075, r * 0.02); c.fill();
+    } else if (S.mouthType === 'smirk') {
+      c.beginPath(); c.moveTo(x - r * 0.26, y - r * 0.28); c.quadraticCurveTo(x + r * 0.05, y - r * 0.1, x + r * 0.3, y - r * 0.34); c.stroke();
+    } else if (S.mouthType === 'straight') {
+      c.beginPath(); c.moveTo(x - r * 0.24, y - r * 0.26); c.lineTo(x + r * 0.24, y - r * 0.26); c.stroke();
+    } else {
+      c.beginPath(); c.arc(x, y - r * 0.18, r * 0.3, Math.PI * 0.16, Math.PI * 0.84); c.stroke();
     }
-    c.globalAlpha = 0.18; c.fillStyle = '#fff';
-    this.ell(c, x - r * 0.3, y + r * 0.35, r * 0.42, r * 0.3);
-    c.globalAlpha = 1;
-  },
-
-  /* ---------- 人形角色工厂 ---------- */
-  human(parts, scale) {
-    scale = scale || {};
-    return function (c, pose) {
-      const rig = CharArt.makeRig(pose);
-      if (scale.w) rig.bodyW = scale.w;
-      if (scale.headR) rig.headR = scale.headR;
-      if (scale.hipY) rig.hipY = scale.hipY;
-      if (scale.shoulderY) rig.shoulderY = scale.shoulderY;
-      if (scale.headY) rig.headY = scale.headY;
-      const armLen = scale.armLen || parts.armLen || 0.30;
-      parts.armLen = armLen;
-      CharArt.drawBody(c, rig, pose.state, !!pose.front, parts);
-    };
-  },
-};
-
-/* =========================================================
-   具体角色美术定义
-   ========================================================= */
-const CHARDRAW = {};
-
-/* ---- 1. 奶蛙：黄桃罐头色巨头 + 黝黑四肢 + 魔性大嘴 ---- */
-CHARDRAW.naiwa = function (c, pose) {
-  const rig = CharArt.makeRig(pose);
-  const face = !!pose.front;
-  const body = '#f8c73c', bodyD = '#dda112', limb = '#3a3330', limbD = '#241f1d';
-  const headR = rig.headR * 1.42;                 // 巨头
-  const headY = rig.headY + 0.02;
-  c.save();
-  if (rig.tuck) { c.translate(0, 0.46); c.rotate(rig.rot); c.translate(0, -0.46); }
-  c.translate(rig.lean * 0.05, rig.bob - rig.squash * 0.05);
-  const hipY = rig.hipY - 0.07, shY = rig.shoulderY + 0.01;
-
-  // 腿（黑，短粗）
-  for (let i = 0; i < 2; i++) {
-    const sgn = i === 0 ? -1 : 1, lift = rig.legLift[i];
-    const hx = sgn * 0.085, footX = hx + sgn * 0.035, footY = lift * 0.26;
-    const kneeX = hx + (footX - hx) * 0.5, kneeY = (hipY + footY) * 0.5 + lift * 0.03;
-    CharArt.capsule(c, hx, hipY, kneeX, kneeY, 0.095, limb);
-    CharArt.capsule(c, kneeX, kneeY, footX, footY + 0.03, 0.078, limbD);
-    c.fillStyle = '#f4e3a0';
-    CharArt.ell(c, footX + 0.012, footY + 0.03, 0.072, 0.044);
-  }
-  // 手臂（黑，向两侧张开，别被圆身子挡住）
-  const drawArm = (sgn, swing) => {
-    const sx = sgn * 0.135, elbX = sx + sgn * 0.095, elbY = shY - 0.14 + swing * 0.02;
-    const handX = elbX + sgn * 0.06 + swing * 0.025;
-    const handY = shY - 0.28 + Math.abs(swing) * 0.055;
-    CharArt.capsule(c, sx, shY - 0.01, elbX, elbY, 0.075, limb);
-    CharArt.capsule(c, elbX, elbY, handX, handY, 0.062, limbD);
-    CharArt.circ(c, handX, handY, 0.052);
-    return { x: handX, y: handY };
-  };
-  drawArm(-1, rig.armSwing[0]);
-  // 身体（黄桃色）
-  const bg = c.createLinearGradient(-0.16, 0, 0.16, 0);
-  bg.addColorStop(0, bodyD); bg.addColorStop(0.32, body); bg.addColorStop(0.8, body); bg.addColorStop(1, bodyD);
-  c.fillStyle = bg;
-  c.beginPath();
-  c.moveTo(-0.145, shY + 0.07);
-  c.quadraticCurveTo(-0.335, (shY + hipY) / 2, -0.175, hipY - 0.06);
-  c.lineTo(0.175, hipY - 0.06);
-  c.quadraticCurveTo(0.335, (shY + hipY) / 2, 0.145, shY + 0.07);
-  c.quadraticCurveTo(0, shY + 0.175, -0.145, shY + 0.07);
-  c.closePath(); c.fill();
-  // 肚子浅色
-  c.fillStyle = 'rgba(255,246,200,.55)';
-  CharArt.ell(c, 0, hipY + 0.075, 0.125, 0.095);
-  // 头
-  c.fillStyle = body;
-  CharArt.circ(c, rig.lean * 0.02, headY - 0.02, headR);
-  c.fillStyle = bodyD;
-  CharArt.ell(c, rig.lean * 0.02, headY - 0.02 - headR * 0.72, headR * 0.86, headR * 0.34);
-  // 头顶两只鼓眼
-  const ex = headR * 0.52, eyeY = headY + headR * 0.62;
-  for (const sgn of [-1, 1]) {
-    c.fillStyle = body;
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex, eyeY, headR * 0.40);
-    c.fillStyle = '#fff';
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex, eyeY + (face ? 0.004 : 0.01), headR * 0.30);
-    c.fillStyle = '#20232a';
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex - (face ? sgn * headR * 0.06 : 0), eyeY, headR * 0.155);
-    c.fillStyle = 'rgba(255,255,255,.92)';
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex + headR * 0.07, eyeY + headR * 0.09, headR * 0.055);
-  }
-  if (face) {
-    // 巨大魔性笑脸
-    c.fillStyle = '#5a2b1c';
-    c.beginPath();
-    c.moveTo(-headR * 0.66, headY - headR * 0.34);
-    c.quadraticCurveTo(0, headY - headR * 1.02, headR * 0.66, headY - headR * 0.34);
-    c.quadraticCurveTo(0, headY + headR * 0.22, -headR * 0.66, headY - headR * 0.34);
-    c.closePath(); c.fill();
-    c.fillStyle = '#ff8b8b';
-    CharArt.ell(c, 0, headY - headR * 0.42, headR * 0.42, headR * 0.19);
-    // 牙齿
-    c.fillStyle = '#fffdf3';
-    CharArt.rr(c, -headR * 0.44, headY - headR * 0.30, headR * 0.88, headR * 0.10, headR * 0.03);
-    // 腮红
-    c.globalAlpha = 0.4; c.fillStyle = '#ff9a6b';
-    CharArt.ell(c, -headR * 0.72, headY - headR * 0.12, headR * 0.2, headR * 0.13);
-    CharArt.ell(c, headR * 0.72, headY - headR * 0.12, headR * 0.2, headR * 0.13);
-    c.globalAlpha = 1;
-  } else {
-    // 背视：只露出大笑的嘴角
-    c.strokeStyle = '#5a2b1c'; c.lineWidth = headR * 0.11; c.lineCap = 'round';
-    c.beginPath();
-    c.moveTo(-headR * 0.72, headY - headR * 0.36);
-    c.quadraticCurveTo(-headR * 0.86, headY - headR * 0.18, -headR * 0.78, headY - headR * 0.02);
-    c.moveTo(headR * 0.72, headY - headR * 0.36);
-    c.quadraticCurveTo(headR * 0.86, headY - headR * 0.18, headR * 0.78, headY - headR * 0.02);
-    c.stroke();
-  }
-  c.restore();
-};
-
-/* ---- 2. 奶龙：圆滚黄色小萌龙 ---- */
-CHARDRAW.nailong = function (c, pose) {
-  const rig = CharArt.makeRig(pose), face = !!pose.front;
-  const body = '#ffd94a', bodyD = '#e0ad1d', belly = '#fff3c4', limb = '#f2c533';
-  c.save();
-  if (rig.tuck) { c.translate(0, 0.46); c.rotate(rig.rot); c.translate(0, -0.46); }
-  c.translate(rig.lean * 0.04, rig.bob - rig.squash * 0.05);
-  const hipY = rig.hipY, shY = rig.shoulderY;
-  // 尾巴
-  c.fillStyle = bodyD;
-  c.beginPath();
-  c.moveTo(0, hipY + 0.02);
-  c.quadraticCurveTo(rig.lean * 0.1 + 0.1, hipY - 0.18, 0.06 + rig.phase % 1 * 0.02, hipY - 0.05);
-  c.quadraticCurveTo(0.02, hipY + 0.02, 0, hipY + 0.02); c.fill();
-  // 腿
-  for (let i = 0; i < 2; i++) {
-    const sgn = i === 0 ? -1 : 1, lift = rig.legLift[i];
-    const hx = sgn * 0.07, footX = hx + sgn * 0.025, footY = lift * 0.26;
-    CharArt.capsule(c, hx, hipY, footX, footY + 0.03, 0.085, limb);
-    c.fillStyle = bodyD; CharArt.ell(c, footX + 0.012, footY + 0.03, 0.062, 0.04);
-  }
-  const drawArm = (sgn, swing) => {
-    const sx = sgn * 0.165, handX = sx + sgn * 0.055, handY = shY - 0.22 + Math.abs(swing) * 0.05;
-    CharArt.capsule(c, sx, shY - 0.01, handX, handY, 0.07, limb);
-    CharArt.circ(c, handX, handY, 0.05);
-    return { x: handX, y: handY };
-  };
-  drawArm(-1, rig.armSwing[0]);
-  // 身体
-  const bg = c.createLinearGradient(-0.18, 0, 0.18, 0);
-  bg.addColorStop(0, bodyD); bg.addColorStop(0.3, body); bg.addColorStop(1, bodyD);
-  c.fillStyle = bg;
-  CharArt.ell(c, 0, (shY + hipY) / 2 + 0.02, 0.20, 0.20);
-  c.fillStyle = belly;
-  CharArt.ell(c, 0, (shY + hipY) / 2 - 0.02, 0.135, 0.14);
-  // 背鳍
-  c.fillStyle = '#ff9f43';
-  c.beginPath();
-  c.moveTo(-0.02, shY + 0.16); c.lineTo(0.04, shY + 0.02); c.lineTo(-0.09, shY + 0.03);
-  c.closePath(); c.fill();
-  drawArm(1, rig.armSwing[1]);
-  // 头
-  const hR = rig.headR * 1.2, hY = rig.headY + 0.01;
-  c.fillStyle = body;
-  CharArt.circ(c, rig.lean * 0.02, hY, hR);
-  c.fillStyle = bodyD;
-  CharArt.ell(c, rig.lean * 0.02, hY + hR * 0.72, hR * 0.72, hR * 0.3);
-  // 小角
-  c.fillStyle = '#ff9f43';
-  CharArt.circ(c, -hR * 0.6, hY + hR * 0.72, hR * 0.2);
-  CharArt.circ(c, hR * 0.6, hY + hR * 0.72, hR * 0.2);
-  if (face) {
-    CharArt.drawFace(c, rig.lean * 0.02, hY, hR, { bigMouth: false });
-  } else {
-    c.globalAlpha = 0.2; c.fillStyle = '#fff';
-    CharArt.ell(c, rig.lean * 0.02 - hR * 0.25, hY + hR * 0.35, hR * 0.4, hR * 0.28); c.globalAlpha = 1;
-  }
-  c.restore();
-};
-
-/* ---- 人形角色样式表 ---- */
-const HUMANS = {
-  /* 东北雨姐：魁梧、花棉袄、头巾，扛大铁勺 */
-  yujie: {
-    scale: { w: 0.40, headR: 0.118, armLen: 0.32 },
-    parts: {
-      cloth: '#e6423c', clothDark: '#b52b26', sleeve: '#e6423c',
-      pants: '#3d3a52', pants2: '#33304a', shoe: '#2b2b30', skin: '#f7cdae', belt: '#f0c14b',
-      blush: true,
-      clothPattern(c, w, hipY, shY) {
-        c.fillStyle = '#ffe9a8';
-        const pts = [[-w * .3, shY - .06], [w * .18, shY - .1], [-w * .05, hipY + .12], [w * .32, hipY + .06], [-w * .34, hipY + .04], [w * .05, shY - .02]];
-        pts.forEach((p, i) => { c.globalAlpha = .95; CharArt.circ(c, p[0], p[1], 0.017); CharArt.circ(c, p[0] - 0.014, p[1] - 0.012, 0.009); c.globalAlpha = 1; });
-      },
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#3a2a24';
-        CharArt.ell(c, x, y + r * 0.62, r * 0.95, r * 0.5);
-        CharArt.circ(c, x, y + r * 1.02, r * 0.3);
-        c.fillStyle = '#f5f0e2';   // 头巾
-        CharArt.rr(c, x - r * 1.06, y + r * 0.52, r * 2.12, r * 0.34, r * 0.16);
-      },
-      handProp(c, hand, sgn) {
-        // 大铁勺
-        c.save(); c.translate(hand.x, hand.y); c.rotate(sgn * -0.35);
-        c.fillStyle = '#9aa0a6'; CharArt.rr(c, -0.012, 0.16, 0.024, 0.34, 0.012);
-        c.fillStyle = '#7d848b';
-        c.beginPath(); c.arc(0, 0.5, 0.062, 0, Math.PI * 2); c.fill();
-        c.restore();
-      },
-    },
-  },
-
-  /* 疯狂小杨哥：黑色短发、卫衣、手持麦 */
-  xiaoyang: {
-    parts: {
-      cloth: '#f2f4f7', clothDark: '#cfd4dc', sleeve: '#f2f4f7',
-      pants: '#2f333b', pants2: '#262b33', shoe: '#f5f5f5', skin: '#f6c9a4', belt: '#ffd34d',
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#1d1f24';
-        if (face) { CharArt.rr(c, x - r * 1.02, y + r * 0.42, r * 2.04, r * 0.5, r * 0.24); CharArt.circ(c, x, y + r * 0.95, r * 0.62); }
-        else { CharArt.circ(c, x, y + r * 0.06, r * 1.02); CharArt.rr(c, x - r * 1.0, y + r * 0.1, r * 2.0, r * 0.62, r * 0.28); }
-      },
-      handProp(c, hand, sgn) {
-        c.fillStyle = '#2b2f36';
-        c.save(); c.translate(hand.x, hand.y); c.rotate(sgn * -0.5);
-        CharArt.rr(c, -0.022, 0.13, 0.044, 0.16, 0.018);
-        c.fillStyle = '#8d949c'; CharArt.circ(c, 0, 0.16, 0.038);
-        c.restore();
-      },
-      handProp2(c, hand) {
-        c.fillStyle = '#20232a'; CharArt.rr(c, hand.x - 0.035, hand.y - 0.05, 0.07, 0.11, 0.016);
-        c.fillStyle = '#4bb8ff'; CharArt.rr(c, hand.x - 0.025, hand.y - 0.04, 0.05, 0.075, 0.01);
-      },
-    },
-  },
-
-  /* 张同学：棉帽、军绿外套、三脚架 */
-  zhangtongxue: {
-    parts: {
-      cloth: '#5c6b45', clothDark: '#465334', sleeve: '#5c6b45',
-      pants: '#2f3a44', pants2: '#28313a', shoe: '#3b2f26', skin: '#e8b98e', belt: '#2f2a24',
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#2a2d33';
-        CharArt.circ(c, x, y + r * 0.35, r * 1.06);
-        c.fillStyle = '#3b4048';
-        CharArt.rr(c, x - r * 1.14, y + r * 0.72, r * 2.28, r * 0.36, r * 0.16);
-        c.fillStyle = '#2b2f36';
-        CharArt.rr(c, x - r * 0.9, y + r * 1.0, r * 1.8, r * 0.46, r * 0.2);
-      },
-      hairSide: true,
-      handProp(c, hand) {
-        c.fillStyle = '#2b2f36';
-        CharArt.rr(c, hand.x - 0.014, hand.y, 0.028, 0.3, 0.012);
-        c.strokeStyle = '#2b2f36'; c.lineWidth = 0.018;
-        c.beginPath(); c.moveTo(hand.x - 0.05, hand.y + 0.3); c.lineTo(hand.x, hand.y + 0.3); c.lineTo(hand.x + 0.05, hand.y + 0.3); c.stroke();
-      },
-      bodyProp(c, w, hipY, shY) {
-        // 斜挎包
-        c.fillStyle = '#3a2f24';
-        c.beginPath(); c.moveTo(-w * 0.45, shY); c.lineTo(w * 0.4, hipY + 0.05); c.lineWidth = 0.03; c.strokeStyle = '#3a2f24'; c.stroke();
-        CharArt.rr(c, w * 0.18, hipY + 0.14, 0.13, 0.11, 0.025);
-      },
-    },
-  },
-
-  /* 李子柒：汉服、发髻、竹篮 */
-  liziqi: {
-    parts: {
-      cloth: '#f6f2e7', clothDark: '#ddd6c4', sleeve: '#f6f2e7',
-      pants: '#e9e2d2', pants2: '#dcd3c0', shoe: '#6a5540', skin: '#f8d3b6', belt: '#b2432f',
-      clothPattern(c, w, hipY, shY) {   // 汉服交领
-        c.strokeStyle = '#c8bda4'; c.lineWidth = 0.014;
-        c.beginPath(); c.moveTo(-w * 0.3, shY + 0.02); c.lineTo(0, hipY + 0.1); c.lineTo(w * 0.3, shY + 0.02); c.stroke();
-      },
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#241d1a';
-        if (face) { CharArt.rr(c, x - r * 1.06, y + r * 0.34, r * 2.12, r * 0.62, r * 0.28); CharArt.circ(c, x, y + r * 1.16, r * 0.42); }
-        else { CharArt.circ(c, x, y + r * 0.1, r * 1.08); CharArt.rr(c, x - r * 1.0, y - r * 0.4, r * 2.0, r * 0.9, r * 0.3); }
-        c.fillStyle = '#b2432f'; CharArt.circ(c, x, y + r * 1.5, r * 0.1);
-      },
-      handProp(c, hand) {   // 竹篮
-        c.fillStyle = '#c99a54';
-        CharArt.rr(c, hand.x - 0.075, hand.y - 0.02, 0.15, 0.115, 0.03);
-        c.strokeStyle = '#a97f3c'; c.lineWidth = 0.012;
-        c.beginPath(); c.arc(hand.x, hand.y + 0.1, 0.062, Math.PI, 0); c.stroke();
-        c.fillStyle = '#7cd44a';
-        CharArt.circ(c, hand.x - 0.03, hand.y + 0.11, 0.024); CharArt.circ(c, hand.x + 0.03, hand.y + 0.11, 0.024);
-      },
-    },
-  },
-
-  /* 刘教练：健身背心、肌肉、哑铃 */
-  liugenhong: {
-    parts: {
-      cloth: '#2bb3d6', clothDark: '#1c8aa8', sleeve: '#f2c9a0',
-      pants: '#37404c', pants2: '#2e3540', shoe: '#eef2f6', skin: '#efa86f', belt: '#20232a',
-      armLen: 0.30,
-      clothPattern(c, w, hipY, shY) {
-        c.fillStyle = 'rgba(255,255,255,.5)';
-        CharArt.rr(c, -w * 0.4, shY - 0.02, w * 0.8, 0.026, 0.012);
-        c.fillStyle = 'rgba(0,0,0,.12)';
-        CharArt.rr(c, -w * 0.4, hipY + 0.16, w * 0.8, 0.02, 0.01);
-      },
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#1e1c1a';
-        if (face) { CharArt.rr(c, x - r * 1.0, y + r * 0.5, r * 2.0, r * 0.42, r * 0.2); }
-        else { CharArt.circ(c, x, y + r * 0.12, r * 0.98); }
-      },
-      handProp(c, hand) {
-        c.fillStyle = '#3b4048';
-        CharArt.rr(c, hand.x - 0.075, hand.y + 0.008, 0.15, 0.03, 0.015);
-        c.fillStyle = '#22262c';
-        CharArt.circ(c, hand.x - 0.078, hand.y + 0.023, 0.032); CharArt.circ(c, hand.x + 0.078, hand.y + 0.023, 0.032);
-      },
-    },
-  },
-
-  /* 董老师：衬衫马甲、书 */
-  donglaoshi: {
-    parts: {
-      cloth: '#f8f8f6', clothDark: '#dfe2e6', sleeve: '#f8f8f6',
-      pants: '#2f3339', pants2: '#282c31', shoe: '#3a3a3f', skin: '#f4c9a3', belt: '#5a4632',
-      clothPattern(c, w, hipY, shY) {   // 马甲
-        c.fillStyle = '#2c303a';
-        c.beginPath();
-        c.moveTo(-w * 0.5, shY + 0.03); c.lineTo(-w * 0.16, shY + 0.03); c.lineTo(-w * 0.1, hipY - 0.03);
-        c.lineTo(-w * 0.52, hipY - 0.03); c.closePath(); c.fill();
-        c.beginPath();
-        c.moveTo(w * 0.5, shY + 0.03); c.lineTo(w * 0.16, shY + 0.03); c.lineTo(w * 0.1, hipY - 0.03);
-        c.lineTo(w * 0.52, hipY - 0.03); c.closePath(); c.fill();
-      },
-      hair(c, x, y, r, face) {
-        c.fillStyle = '#22201f';
-        if (face) { CharArt.rr(c, x - r * 1.0, y + r * 0.46, r * 2.0, r * 0.5, r * 0.22); }
-        else { CharArt.circ(c, x, y + r * 0.1, r * 1.0); }
-      },
-      faceExtras(c, x, y, r) {
-        c.strokeStyle = '#2b2f36'; c.lineWidth = r * 0.07;
-        c.beginPath();
-        c.arc(x - r * 0.4, y + r * 0.06, r * 0.3, Math.PI * 0.05, Math.PI * 0.95);
-        c.arc(x + r * 0.4, y + r * 0.06, r * 0.3, Math.PI * 0.05, Math.PI * 0.95);
-        c.stroke();
-      },
-      handProp(c, hand) {
-        c.fillStyle = '#8d5a3b';
-        CharArt.rr(c, hand.x - 0.07, hand.y - 0.03, 0.14, 0.09, 0.012);
-        c.fillStyle = '#fffdf6';
-        CharArt.rr(c, hand.x - 0.062, hand.y - 0.024, 0.124, 0.078, 0.008);
-      },
-    },
-  },
-};
-
-/* 生成人形角色绘制函数 */
-['yujie', 'xiaoyang', 'zhangtongxue', 'liziqi', 'liugenhong', 'donglaoshi'].forEach(k => {
-  const def = HUMANS[k];
-  CHARDRAW[k] = CharArt.human(def.parts, def.scale || {});
-});
-
-/* ---- 9. 雨姐的鹅：白色大鹅 ---- */
-CHARDRAW.goose = function (c, pose) {
-  const rig = CharArt.makeRig(pose), face = !!pose.front;
-  c.save();
-  if (rig.tuck) { c.translate(0, 0.42); c.rotate(rig.rot); c.translate(0, -0.42); }
-  c.translate(rig.lean * 0.04, rig.bob - rig.squash * 0.05);
-  const body = '#fdfdf7', bodyD = '#d8dbe0', beak = '#ff9d1e';
-  const hipY = 0.34;
-  // 腿（橙）
-  for (let i = 0; i < 2; i++) {
-    const sgn = i === 0 ? -1 : 1, lift = rig.legLift[i];
-    c.fillStyle = beak;
-    CharArt.capsule(c, sgn * 0.06, hipY, sgn * 0.075, lift * 0.24 + 0.03, 0.032, beak);
-    c.fillStyle = '#e07f0c';
-    CharArt.rr(c, sgn * 0.075 - 0.055, lift * 0.24 + 0.03, 0.11, 0.022, 0.01);
-  }
-  // 身体
-  const bg = c.createLinearGradient(-0.2, 0, 0.2, 0);
-  bg.addColorStop(0, bodyD); bg.addColorStop(0.35, body); bg.addColorStop(1, bodyD);
-  c.fillStyle = bg;
-  CharArt.ell(c, 0, hipY + 0.12, 0.22, 0.19);
-  // 翅膀（扑棱）
-  const flap = Math.sin(rig.phase) * 0.10;
-  for (const sgn of [-1, 1]) {
-    c.save(); c.translate(sgn * 0.19, hipY + 0.16); c.rotate(sgn * (0.5 + flap));
-    c.fillStyle = body;
-    c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(sgn * 0.12, -0.08, sgn * 0.06, -0.2);
-    c.quadraticCurveTo(sgn * 0.02, -0.12, 0, 0); c.fill();
-    c.fillStyle = bodyD;
-    c.beginPath(); c.moveTo(0, -0.01); c.quadraticCurveTo(sgn * 0.1, -0.08, sgn * 0.05, -0.18);
-    c.quadraticCurveTo(sgn * 0.015, -0.1, 0, -0.01); c.fill();
     c.restore();
-  }
-  // 长脖子
-  const neckLean = rig.lean * 0.06;
-  CharArt.capsule(c, 0, hipY + 0.26, neckLean, 0.80, 0.075, body);
-  // 头
-  const hR = 0.12;
-  c.fillStyle = body;
-  CharArt.circ(c, neckLean, 0.88, hR);
-  // 嘴
-  c.fillStyle = beak;
-  c.beginPath();
-  if (face) { c.moveTo(neckLean - 0.06, 0.86); c.lineTo(neckLean - 0.2, 0.84); c.lineTo(neckLean - 0.06, 0.80); }
-  else { c.moveTo(neckLean + 0.06, 0.86); c.lineTo(neckLean + 0.2, 0.84); c.lineTo(neckLean + 0.06, 0.80); }
-  c.closePath(); c.fill();
-  // 眼
-  c.fillStyle = '#20232a';
-  CharArt.circ(c, neckLean + (face ? -0.045 : 0.03), 0.915, 0.022);
-  if (face) CharArt.circ(c, neckLean - 0.075, 0.905, 0.022);
-  // 愤怒的小红点（鹅脾气）
-  c.fillStyle = '#e6423c';
-  CharArt.circ(c, neckLean + (face ? -0.05 : 0.035), 0.955, 0.016);
-  c.restore();
-};
+    // 腮红
+    if (S.blush) {
+      c.globalAlpha = 0.34; c.fillStyle = S.blush;
+      PEN.ell(c, x - r * 0.66, y - r * 0.18, r * 0.19, r * 0.12);
+      c.fill(); PEN.ell(c, x + r * 0.66, y - r * 0.18, r * 0.19, r * 0.12); c.fill();
+      c.globalAlpha = 1;
+    }
+  },
 
-/* ---- 10. 赛博奶蛙：机械霓虹奶蛙 ---- */
-CHARDRAW.cybernaiwa = function (c, pose) {
-  const rig = CharArt.makeRig(pose), face = !!pose.front;
-  const body = '#4a4f5c', bodyD = '#2c303a', neon = '#22e6ff', neon2 = '#ff3ec8';
-  const headR = rig.headR * 1.42, headY = rig.headY + 0.02;
-  c.save();
-  if (rig.tuck) { c.translate(0, 0.46); c.rotate(rig.rot); c.translate(0, -0.46); }
-  c.translate(rig.lean * 0.05, rig.bob - rig.squash * 0.05);
-  const hipY = rig.hipY - 0.02, shY = rig.shoulderY - 0.01;
-  // 腿
-  for (let i = 0; i < 2; i++) {
-    const sgn = i === 0 ? -1 : 1, lift = rig.legLift[i];
-    const hx = sgn * 0.075, footX = hx + sgn * 0.03, footY = lift * 0.26;
-    const kneeX = hx + (footX - hx) * 0.5, kneeY = (hipY + footY) * 0.5 + lift * 0.03;
-    CharArt.capsule(c, hx, hipY, kneeX, kneeY, 0.078, body);
-    CharArt.capsule(c, kneeX, kneeY, footX, footY + 0.03, 0.062, bodyD);
-    c.fillStyle = neon; CharArt.ell(c, footX + 0.01, footY + 0.028, 0.055, 0.03);
-  }
-  const drawArm = (sgn, swing) => {
-    const sx = sgn * 0.155, handX = sx + sgn * 0.055 + swing * 0.02;
-    const handY = shY - 0.26 + Math.abs(swing) * 0.05;
-    CharArt.capsule(c, sx, shY - 0.01, handX, handY, 0.066, body);
-    c.fillStyle = neon2; CharArt.circ(c, handX, handY, 0.042);
-    return { x: handX, y: handY };
-  };
-  drawArm(-1, rig.armSwing[0]);
-  c.fillStyle = body;
-  CharArt.ell(c, 0, (shY + hipY) / 2, 0.19, 0.19);
-  c.strokeStyle = neon; c.lineWidth = 0.018;
-  c.beginPath(); c.moveTo(-0.1, hipY + 0.03); c.lineTo(0.1, hipY + 0.03); c.stroke();
-  c.fillStyle = 'rgba(34,230,255,.35)';
-  CharArt.ell(c, 0, (shY + hipY) / 2 - 0.02, 0.11, 0.1);
-  // 头
-  c.fillStyle = body;
-  CharArt.circ(c, rig.lean * 0.02, headY - 0.02, headR);
-  c.strokeStyle = neon2; c.lineWidth = 0.02;
-  c.beginPath(); c.arc(rig.lean * 0.02, headY - 0.02, headR * 0.86, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
-  const ex = headR * 0.52, eyeY = headY + headR * 0.6;
-  for (const sgn of [-1, 1]) {
-    c.fillStyle = bodyD;
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex, eyeY, headR * 0.4);
-    c.fillStyle = neon;
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex, eyeY, headR * 0.24);
-    c.fillStyle = '#101318';
-    CharArt.circ(c, rig.lean * 0.02 + sgn * ex, eyeY, headR * 0.1);
-  }
-  if (face) {
-    c.fillStyle = '#14171d';
-    c.beginPath();
-    c.moveTo(-headR * 0.62, headY - headR * 0.36);
-    c.quadraticCurveTo(0, headY - headR * 0.96, headR * 0.62, headY - headR * 0.36);
-    c.quadraticCurveTo(0, headY + headR * 0.18, -headR * 0.62, headY - headR * 0.36);
-    c.closePath(); c.fill();
-    c.strokeStyle = neon; c.lineWidth = 0.014;
-    c.beginPath(); c.moveTo(-headR * 0.5, headY - headR * 0.36); c.lineTo(headR * 0.5, headY - headR * 0.36); c.stroke();
-  } else {
-    c.strokeStyle = neon; c.lineWidth = 0.018;
-    c.beginPath(); c.moveTo(-headR * 0.6, headY - headR * 0.3); c.lineTo(-headR * 0.85, headY - headR * 0.05);
-    c.moveTo(headR * 0.6, headY - headR * 0.3); c.lineTo(headR * 0.85, headY - headR * 0.05); c.stroke();
-  }
-  c.restore();
-};
+  /* 通用后脑 */
+  backHead(c, x, y, r, S) {
+    // 耳朵
+    PEN.ell(c, x - r * 0.98, y - r * 0.05, r * 0.17, r * 0.24);
+    PEN.shape(c, S.skin.dark, 0.01);
+    PEN.ell(c, x + r * 0.98, y - r * 0.05, r * 0.17, r * 0.24);
+    PEN.shape(c, S.skin.dark, 0.01);
+    // 后脑高光
+    c.globalAlpha = 0.22; c.fillStyle = '#fff';
+    PEN.ell(c, x - r * 0.28, y + r * 0.4, r * 0.42, r * 0.3); c.fill();
+    c.globalAlpha = 1;
+  },
 
-/* ---- 11. 检票员（追逐者，不可选） ---- */
-CHARDRAW.inspector = CharArt.human({
-  cloth: '#2c3e6b', clothDark: '#1e2c50', sleeve: '#2c3e6b',
-  pants: '#243258', pants2: '#1c2745', shoe: '#1a1a1f', skin: '#e8b98e', belt: '#111',
-  clothPattern(c, w, hipY, shY) {
-    c.fillStyle = '#e6c34a';
-    CharArt.circ(c, -w * 0.22, shY - 0.06, 0.018);
-    CharArt.circ(c, -w * 0.22, shY - 0.16, 0.018);
-    c.fillStyle = '#d8b23a';
-    CharArt.rr(c, -w * 0.3, hipY + 0.1, w * 0.6, 0.035, 0.014);
-  },
-  hair(c, x, y, r, face) {
-    c.fillStyle = '#243258';
-    CharArt.circ(c, x, y + r * 0.5, r * 1.1);
-    c.fillStyle = '#1b2540';
-    CharArt.rr(c, x - r * 1.2, y + r * 0.78, r * 2.4, r * 0.28, r * 0.14);
-    CharArt.rr(c, x - r * 0.85, y + r * 0.95, r * 1.7, r * 0.42, r * 0.12);
-    c.fillStyle = '#e6c34a';
-    CharArt.circ(c, x, y + r * 1.02, r * 0.13);
-  },
-  faceExtras(c, x, y, r) {
-    c.fillStyle = '#3a2a20';
-    CharArt.rr(c, x - r * 0.5, y - r * 0.34, r * 1.0, r * 0.16, r * 0.07);
-  },
-  handProp(c, hand) {
-    c.fillStyle = '#dcdcdc';
-    CharArt.rr(c, hand.x - 0.05, hand.y - 0.02, 0.1, 0.13, 0.02);
-    c.fillStyle = '#c0392b'; CharArt.rr(c, hand.x - 0.05, hand.y + 0.055, 0.1, 0.035, 0.01);
-  },
-}, { w: 0.33 });
-
-/* ---- 12. 追逐的狗（不可选） ---- */
-CHARDRAW.dog = function (c, pose) {
-  const rig = CharArt.makeRig(pose);
-  c.save();
-  c.translate(rig.lean * 0.04, rig.bob * 1.6 - rig.squash * 0.05);
-  const body = '#b8813f', bodyD = '#8f6129', belly = '#e8cfa8';
-  const hipY = 0.30;
-  // 四条腿
-  for (let i = 0; i < 4; i++) {
-    const sgn = i % 2 === 0 ? -1 : 1;
-    const lift = rig.legLift[i % 2];
-    const x = sgn * 0.12 + (i > 1 ? 0.03 : -0.03);
-    CharArt.capsule(c, x, hipY, x + sgn * 0.02, lift * 0.2 + 0.02, 0.042, bodyD);
-  }
-  // 身体
-  c.fillStyle = body;
-  CharArt.ell(c, 0, hipY + 0.04, 0.24, 0.135);
-  c.fillStyle = belly;
-  CharArt.ell(c, 0, hipY - 0.05, 0.19, 0.07);
-  // 尾巴
-  c.strokeStyle = body; c.lineWidth = 0.05; c.lineCap = 'round';
-  c.beginPath(); c.moveTo(-0.22, hipY + 0.1);
-  c.quadraticCurveTo(-0.34, hipY + 0.2 + Math.sin(rig.phase * 2) * 0.05, -0.3, hipY + 0.32); c.stroke();
-  // 头
-  const hy = hipY + 0.22;
-  c.fillStyle = body;
-  CharArt.circ(c, 0.26, hy, 0.115);
-  c.fillStyle = bodyD;
-  CharArt.ell(c, 0.34, hy - 0.03, 0.075, 0.055);
-  c.fillStyle = '#20232a';
-  CharArt.circ(c, 0.4, hy - 0.03, 0.026);
-  CharArt.circ(c, 0.28, hy + 0.03, 0.018);
-  // 耳朵
-  c.fillStyle = bodyD;
-  c.beginPath(); c.moveTo(0.2, hy + 0.09); c.lineTo(0.17, hy + 0.19); c.lineTo(0.28, hy + 0.12); c.closePath(); c.fill();
-  c.restore();
-};
-
-/* ---- 对外接口 ---- */
-const CharArtAPI = {
-  /* 在世界坐标绘制角色：c 为已按投影缩放好的上下文（原点在脚底，y 向上） */
-  draw(c, skin, pose) {
-    const fn = CHARDRAW[skin] || CHARDRAW.naiwa;
-    fn(c, pose);
-  },
+  /* ---------------- 缩略图 / 对外接口 ---------------- */
   makePose(state, t, opt) {
     return Object.assign({ state: state || 'run', t: t || 0, lean: 0, squash: 0, front: false }, opt || {});
   },
-  /* 在 2D 缩略图上绘制（用于商店卡片 / 主菜单） */
+  draw(c, skin, pose) {
+    const fn = CHARDRAW[skin] || CHARDRAW.naiwa;
+    try { fn(c, pose); } catch (e) { /* 单个角色绘制异常不影响整局 */ }
+  },
   thumb(canvas, skin, time) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = canvas.clientWidth || 120, h = canvas.clientHeight || 118;
+    const w = canvas.clientWidth || 120, h = canvas.clientHeight || 104;
     if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
       canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
     }
     const c = canvas.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
-    const hp = h * 0.94;
-    c.save();
-    c.translate(w / 2, h * 0.95);
-    c.scale(hp, -hp);
-    const pose = CharArtAPI.makePose('idle', (time || 0) * 0.9, { front: true });
-    CharArtAPI.draw(c, skin, pose);
-    c.restore();
     // 地面阴影
-    const g = c.createRadialGradient(w / 2, h * 0.93, 1, w / 2, h * 0.93, w * 0.3);
+    const g = c.createRadialGradient(w / 2, h * 0.95, 1, w / 2, h * 0.95, w * 0.34);
     g.addColorStop(0, 'rgba(0,0,0,.22)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     c.fillStyle = g;
-    c.beginPath(); c.ellipse(w / 2, h * 0.93, w * 0.3, h * 0.05, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(w / 2, h * 0.95, w * 0.34, h * 0.055, 0, 0, Math.PI * 2); c.fill();
+    // 悬浮光圈（限定角色）
+    const hp = h * 0.9;
+    c.save();
+    c.translate(w / 2, h * 0.96);
+    c.scale(hp, -hp);
+    const pose = CharArt.makePose('idle', (time || 0) * 0.9, { front: true });
+    CharArt.draw(c, skin, pose);
+    c.restore();
   },
+
+  /* 兼容旧调用 */
+  ell(c, x, y, rx, ry) { PEN.ell(c, x, y, rx, ry); c.fill(); },
+  circ(c, x, y, r) { PEN.circle(c, x, y, r); c.fill(); },
+  rr(c, x, y, w, h, r) { PEN.rr(c, x, y, w, h, r); c.fill(); },
+  capsule(c, x0, y0, x1, y1, w, col) { PEN.cylFill(c, x0, y0, x1, y1, w, col, 0); },
+  shade(c, x, y, r, col, a) {
+    const g = c.createRadialGradient(x, y, r * 0.1, x, y, r);
+    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = a == null ? 0.5 : a; c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+  },
+  tone: PEN.tone,
+  pal: PEN.pal,
+};
+
+/* 兼容旧接口名 */
+const CharArtAPI = CharArt;
+
+/* =========================================================
+   体型工厂：把配色 + 细节组装成绘制函数
+   ========================================================= */
+function makeHuman(S, prop) {
+  S._prop = prop;
+  S.cloth = S.cloth || PEN.pal('#3a6fb0');
+  S.sleeve = S.sleeve || S.cloth;
+  S.sleeveBack = S.sleeveBack || { light: PEN.tone(S.sleeve.base, 0.78), base: PEN.tone(S.sleeve.base, 0.7), dark: PEN.tone(S.sleeve.base, 0.55) };
+  S.pants = S.pants || PEN.pal('#33384a');
+  S.pantsBack = S.pantsBack || { light: PEN.tone(S.pants.base, 0.78), base: PEN.tone(S.pants.base, 0.7), dark: PEN.tone(S.pants.base, 0.55) };
+  S.skin = S.skin || PEN.pal('#f2c39b');
+  S.shoe = S.shoe || PEN.pal('#f2f2f0');
+  S.shoeDark = S.shoeDark || { light: PEN.tone(S.shoe.base, 0.8), base: PEN.tone(S.shoe.base, 0.72), dark: PEN.tone(S.shoe.base, 0.58) };
+  S.legW = S.legW || 0.088 * (S._prop === PROP.burly ? 1.25 : 1);
+  S.armW = S.armW || 0.078 * (S._prop === PROP.burly ? 1.3 : 1);
+  S.footW = S.footW || 0.105;
+  S.footH = S.footH || 0.05;
+  return function (c, pose) { CharArt.human(c, pose, S); };
+}
+
+/* =========================================================
+   具体角色
+   ========================================================= */
+const CHARDRAW = {};
+
+/* ---------- 1. 奶蛙：黄桃罐头色巨头 + 黝黑四肢 + 魔性大笑 ---------- */
+CHARDRAW.naiwa = function (c, pose) {
+  const R = CharArt.rig(pose, { hipY: 0.32, shoulderY: 0.575, headR: 0.20, shoulderW: 0.095, hipW: 0.072, leg: 0.32, neck: 0.012 });
+  const front = R.front, lw = 0.014;
+  const bodyC = PEN.pal('#f9c93c');
+  const limbC = PEN.pal('#3a332e');
+  const bellyC = '#fff1c2';
+  const hy = R.P.headY, hr = R.P.headR;
+
+  c.save();
+  if (R.tuck) { c.translate(0, 0.40); c.rotate(R.rot); c.translate(0, -0.40); }
+  c.translate(R.sway + R.lean * 0.03, R.bob - R.squash * 0.05);
+
+  const hipY = R.P.hipY, shY = R.P.shoulderY;
+
+  // ---- 腿（黑，短粗，带脚蹼） ----
+  const drawLeg = (L, back) => {
+    const col = back ? { light: PEN.tone(limbC.base, 0.7), base: PEN.tone(limbC.base, 0.62), dark: PEN.tone(limbC.base, 0.5) } : limbC;
+    PEN.cap(c, L.hipX, hipY, L.kneeX, L.kneeY, 0.105);
+    PEN.shape(c, PEN.cyl(c, L.hipX, hipY, L.kneeX, L.kneeY, 0.105, col.light, col.base, col.dark), lw);
+    PEN.cap(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY + 0.02, 0.086);
+    PEN.shape(c, PEN.cyl(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY, 0.086, col.light, col.base, col.dark), lw);
+    // 大脚掌 + 蹼
+    c.save();
+    c.translate(L.ankleX, Math.max(0.03, L.ankleY));
+    c.rotate(-L.lift * 0.12);
+    PEN.ell(c, 0, -0.005, 0.086, 0.042);
+    PEN.shape(c, '#f6e6ae', lw * 0.9);
+    for (const sgn of [-1, 1]) {
+      PEN.ell(c, sgn * 0.055, -0.02, 0.03, 0.02);
+      PEN.shape(c, '#f6e6ae', 0.006);
+    }
+    c.restore();
+  };
+  // ---- 手臂（黑，外张，手带指） ----
+  const drawArm = (A, back) => {
+    const col = back ? { light: PEN.tone(limbC.base, 0.7), base: PEN.tone(limbC.base, 0.62), dark: PEN.tone(limbC.base, 0.5) } : limbC;
+    // 手臂外张，避免被圆身子挡住
+    const out = A.sgn * 0.085;
+    A = { shX: A.shX, shY: A.shY, elbX: A.elbX + out, elbY: A.elbY + 0.01, handX: A.handX + out * 1.7, handY: A.handY, sgn: A.sgn };
+    const midX = A.shX + (A.elbX - A.shX) * 0.6, midY = A.shY + (A.elbY - A.shY) * 0.6;
+    PEN.cap(c, A.shX, A.shY, midX, midY, 0.078);
+    PEN.shape(c, PEN.cyl(c, A.shX, A.shY, midX, midY, 0.078, col.light, col.base, col.dark), lw);
+    PEN.cap(c, midX, midY, A.elbX, A.elbY, 0.068);
+    PEN.shape(c, PEN.cyl(c, midX, midY, A.elbX, A.elbY, 0.068, col.light, col.base, col.dark), lw);
+    PEN.cap(c, A.elbX, A.elbY, A.handX, A.handY, 0.062);
+    PEN.shape(c, PEN.cyl(c, A.elbX, A.elbY, A.handX, A.handY, 0.062, col.light, col.base, col.dark), lw);
+    // 三指手掌
+    c.save();
+    c.translate(A.handX, A.handY);
+    c.rotate(-A.sgn * 0.5);
+    PEN.ell(c, 0, 0, 0.05, 0.045);
+    PEN.shape(c, '#f6e6ae', lw * 0.85);
+    for (const k of [-1, 0, 1]) {
+      PEN.cap(c, 0, 0, 0.028 * A.sgn, 0.05 + (k === 0 ? 0.012 : 0), 0.026);
+      c.save(); c.rotate(k * 0.42); PEN.shape(c, '#f6e6ae', 0.006); c.restore();
+    }
+    c.restore();
+  };
+
+  drawLeg(R.legs[0], true);
+  drawArm(R.arms[0], true);
+
+  // ---- 身体（下宽上窄的胖子体型） ----
+  c.save();
+  c.translate(0, hipY); c.rotate(R.twist); c.translate(0, -hipY);
+  c.beginPath();
+  c.moveTo(-0.125, shY + 0.05);
+  c.bezierCurveTo(-0.265, shY - 0.02, -0.245, hipY - 0.04, -0.155, hipY - 0.07);
+  c.quadraticCurveTo(0, hipY - 0.105, 0.155, hipY - 0.07);
+  c.bezierCurveTo(0.245, hipY - 0.04, 0.265, shY - 0.02, 0.125, shY + 0.05);
+  c.quadraticCurveTo(0, shY + 0.11, -0.125, shY + 0.05);
+  c.closePath();
+  PEN.shape(c, PEN.vertical(c, 0, shY + 0.06, shY - hipY + 0.14, bodyC.light, bodyC.base, bodyC.dark), lw);
+  // 肚皮
+  PEN.ell(c, 0, hipY + 0.015, 0.135, 0.105);
+  PEN.shape(c, bellyC, 0.008);
+  c.globalAlpha = 0.35; c.fillStyle = '#fff';
+  PEN.ell(c, -0.05, hipY + 0.05, 0.05, 0.035); c.fill(); c.globalAlpha = 1;
+  // 颈/头
+  const headY = hy + 0.015;
+  PEN.circle(c, 0, headY, hr);
+  PEN.shape(c, PEN.ball(c, 0, headY, hr, PEN.tone('#ffe38f', 1.05), bodyC.base, bodyC.dark), lw);
+
+  // 头顶鼓眼
+  const ex = hr * 0.5, eyeY = headY + hr * 0.6;
+  for (const sgn of [-1, 1]) {
+    // 眼泡
+    PEN.circle(c, sgn * ex, eyeY, hr * 0.4);
+    PEN.shape(c, PEN.ball(c, sgn * ex, eyeY, hr * 0.4, PEN.tone('#ffe38f', 1.08), bodyC.base, bodyC.dark), lw * 0.9);
+    // 眼球
+    PEN.circle(c, sgn * ex + (front ? -sgn * hr * 0.04 : 0), eyeY + (front ? 0.006 : 0.012), hr * 0.30);
+    PEN.shape(c, '#fffdf6', 0.009);
+    // 瞳孔（笑时眯眼）
+    const happy = Math.sin((pose.t || 0) * Math.PI * 2) > 0.6;
+    if (front) {
+      PEN.circle(c, sgn * ex - sgn * hr * 0.07, eyeY + 0.002, hr * 0.16);
+      PEN.shape(c, '#221d1a', 0.006);
+      PEN.circle(c, sgn * ex - sgn * hr * 0.11, eyeY + hr * 0.09, hr * 0.055);
+      PEN.shape(c, 'rgba(255,255,255,.95)', 0);
+      if (happy) {  // 眯眼弧线
+        c.strokeStyle = '#221d1a'; c.lineWidth = 0.012;
+        c.beginPath(); c.arc(sgn * ex, eyeY - hr * 0.02, hr * 0.22, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
+      }
+    } else {
+      PEN.circle(c, sgn * ex, eyeY + 0.006, hr * 0.155);
+      PEN.shape(c, '#221d1a', 0.006);
+      PEN.circle(c, sgn * ex + hr * 0.06, eyeY + hr * 0.09, hr * 0.05);
+      PEN.shape(c, 'rgba(255,255,255,.9)', 0);
+    }
+    // 眼皮
+    c.globalAlpha = 0.25; c.fillStyle = bodyC.dark;
+    c.beginPath(); c.arc(sgn * ex, eyeY, hr * 0.4, Math.PI * 0.95, Math.PI * 2.05); c.fill();
+    c.globalAlpha = 1;
+  }
+
+  if (front) {
+    // 巨型魔性笑口
+    const mw = hr * 0.78, mtop = headY - hr * 0.30, mbot = headY - hr * 0.86;
+    c.beginPath();
+    c.moveTo(-mw, mtop);
+    c.quadraticCurveTo(0, mbot, mw, mtop);
+    c.quadraticCurveTo(0, headY - hr * 0.02, -mw, mtop);
+    c.closePath();
+    c.fillStyle = '#4a2419'; c.fill();
+    c.strokeStyle = PEN.line; c.lineWidth = lw; c.stroke();
+    c.save(); c.clip();
+    // 舌头
+    c.fillStyle = '#ff8b8b';
+    PEN.ell(c, 0, headY - hr * 0.16, hr * 0.44, hr * 0.24); c.fill();
+    // 上排牙
+    c.fillStyle = '#fffdf3';
+    PEN.rr(c, -mw * 0.94, mtop - hr * 0.10, mw * 1.88, hr * 0.12, 0.012); c.fill();
+    c.restore();
+    // 鼻孔
+    c.fillStyle = PEN.tone(bodyC.base, 0.7);
+    PEN.ell(c, -hr * 0.16, headY + hr * 0.16, hr * 0.045, hr * 0.03); c.fill();
+    PEN.ell(c, hr * 0.16, headY + hr * 0.16, hr * 0.045, hr * 0.03); c.fill();
+    // 腮红
+    c.globalAlpha = 0.35; c.fillStyle = '#ff9f76';
+    PEN.ell(c, -hr * 0.72, headY - hr * 0.2, hr * 0.18, hr * 0.12); c.fill();
+    PEN.ell(c, hr * 0.72, headY - hr * 0.2, hr * 0.18, hr * 0.12); c.fill();
+    c.globalAlpha = 1;
+  } else {
+    // 背视：嘴角从两侧露出，笑到变形
+    c.strokeStyle = '#4a2419'; c.lineWidth = 0.016; c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(-hr * 0.74, headY - hr * 0.34);
+    c.quadraticCurveTo(-hr * 0.92, headY - hr * 0.14, -hr * 0.8, headY - hr * 0.0);
+    c.moveTo(hr * 0.74, headY - hr * 0.34);
+    c.quadraticCurveTo(hr * 0.92, headY - hr * 0.14, hr * 0.8, headY - hr * 0.0);
+    c.stroke();
+    // 后脑纹理
+    c.globalAlpha = 0.18; c.fillStyle = '#fff';
+    PEN.ell(c, -hr * 0.3, headY + hr * 0.35, hr * 0.4, hr * 0.28); c.fill();
+    c.globalAlpha = 1;
+  }
+  c.restore();
+
+  drawLeg(R.legs[1], false);
+  drawArm(R.arms[1], false);
+  c.restore();
+};
+
+/* ---------- 2. 奶龙 ---------- */
+CHARDRAW.nailong = (function () {
+  const S = {
+    _prop: Object.assign({}, PROP.chibi, { headR: 0.195, shoulderY: 0.585, hipY: 0.335, hipW: 0.088 }),
+    cloth: PEN.pal('#ffd84a'), skin: PEN.pal('#ffd84a'),
+    pants: PEN.pal('#e8b81c'), shoe: PEN.pal('#e8b81c'), shoeSole: '#fff2c0',
+    blush: '#ff9f9f', mouthType: 'smile', sleeveLen: 1.0,
+    legW: 0.088, armW: 0.082, footW: 0.105, footH: 0.048,
+    clothDetail(c, R, bw, hw) {
+      // 奶白色肚皮
+      PEN.ell(c, 0, R.P.hipY + 0.055, bw * 0.52, (R.P.shoulderY - R.P.hipY) * 0.46);
+      PEN.shape(c, '#fff8d8', 0.009);
+    },
+    /* 背上的小翅膀 */
+    wing(c, R, back) {
+      const sgn = back ? -1 : 1;
+      const shY = R.P.shoulderY + 0.035;
+      c.save();
+      c.translate(sgn * R.P.shoulderW * 1.05, shY);
+      c.rotate(sgn * (0.55 + Math.sin(R.ph) * 0.22));
+      c.beginPath();
+      c.moveTo(0, 0.03);
+      c.quadraticCurveTo(sgn * 0.11, 0.05, sgn * 0.13, -0.09);
+      c.quadraticCurveTo(sgn * 0.05, -0.07, 0, 0.03);
+      c.closePath();
+      PEN.shape(c, PEN.tone('#ff9f43', back ? 0.78 : 1), 0.011);
+      c.restore();
+    },
+    hair(c, x, y, r, front) {
+      // 头顶小角
+      for (const sgn of [-1, 1]) {
+        c.save();
+        c.translate(sgn * r * 0.5, y + r * 0.78);
+        c.rotate(sgn * 0.4);
+        PEN.cap(c, 0, 0, 0, r * 0.34, r * 0.17);
+        PEN.shape(c, '#ff9f43', 0.011);
+        c.restore();
+      }
+    },
+    tail(c, R) {
+      c.save();
+      c.translate(0, R.P.hipY + 0.02);
+      c.beginPath();
+      c.moveTo(-0.03, 0);
+      c.quadraticCurveTo(-0.22, -0.06 + Math.sin(R.ph) * 0.03, -0.30, -0.16 + Math.sin(R.ph) * 0.05);
+      c.quadraticCurveTo(-0.16, -0.12, -0.02, -0.06);
+      c.closePath();
+      PEN.shape(c, PEN.tone('#ffd84a', 0.9), 0.012);
+      c.restore();
+    },
+  };
+  const base = makeHuman(S, S._prop);
+  return function (c, pose) {
+    const R = CharArt.rig(pose, S._prop);
+    S._r = R;
+    c.save();
+    // 尾巴先画（在身后）
+    c.save(); c.translate(R.sway, R.bob); S.tail(c, R); c.restore();
+    base(c, pose);
+    c.restore();
+  };
+})();
+
+/* ---------- 3. 东北雨姐 ---------- */
+CHARDRAW.yujie = makeHuman({
+  cloth: PEN.pal('#d93a34'), sleeve: PEN.pal('#d93a34'),
+  pants: PEN.pal('#33304a'), skin: PEN.pal('#f6cca8'),
+  shoe: PEN.pal('#2b2b30'), shoeSole: '#8d8d92',
+  brow: '#3a2a24', blush: '#ff8f7a', mouthType: 'smirk',
+  legW: 0.118, armW: 0.104, footW: 0.13, footH: 0.052,
+  clothDetail(c, R, bw, hw, front) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 花棉袄：碎花 + 衣襟
+    const dots = [
+      [-bw * 0.55, shY - 0.10], [bw * 0.42, shY - 0.14], [-bw * 0.1, shY - 0.2], [bw * 0.62, shY - 0.05],
+      [-bw * 0.62, hipY + 0.14], [bw * 0.16, hipY + 0.13], [-bw * 0.2, hipY + 0.2], [bw * 0.55, hipY + 0.19],
+      [0, shY - 0.32], [-bw * 0.42, hipY + 0.06], [bw * 0.34, hipY + 0.06],
+    ];
+    dots.forEach((p, i) => {
+      c.fillStyle = i % 3 === 0 ? '#ffe9a8' : '#fff4d0';
+      PEN.circle(c, p[0], p[1], 0.017); c.fill();
+      for (let k = 0; k < 5; k++) {
+        const a = k / 5 * Math.PI * 2;
+        PEN.circle(c, p[0] + Math.cos(a) * 0.019, p[1] + Math.sin(a) * 0.019, 0.008); c.fill();
+      }
+    });
+    // 衣襟（盘扣）
+    c.strokeStyle = '#f0c14b'; c.lineWidth = 0.012;
+    c.beginPath(); c.moveTo(0, shY + 0.02); c.lineTo(0, hipY - 0.02); c.stroke();
+    for (let i = 0; i < 3; i++) {
+      PEN.circle(c, 0, shY - 0.05 - i * 0.09, 0.014);
+      PEN.shape(c, '#f0c14b', 0.007);
+    }
+    // 下摆厚棉
+    PEN.rr(c, -hw * 1.02, hipY - 0.075, hw * 2.04, 0.05, 0.02);
+    PEN.shape(c, PEN.tone('#d93a34', 0.82), 0.011);
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#3a2a24';
+    if (front) {
+      PEN.rr(c, x - r * 1.04, y + r * 0.30, r * 2.08, r * 0.72, r * 0.3); c.fill();
+      PEN.circle(c, x - r * 0.98, y + r * 0.05, r * 0.26); c.fill();
+      PEN.circle(c, x + r * 0.98, y + r * 0.05, r * 0.26); c.fill();
+    } else {
+      PEN.circle(c, x, y + r * 0.08, r * 1.06); c.fill();
+      PEN.rr(c, x - r * 1.0, y - r * 0.5, r * 2.0, r * 0.95, r * 0.32); c.fill();
+    }
+    // 花头巾
+    c.fillStyle = '#f7f1e0';
+    PEN.rr(c, x - r * 1.12, y + r * 0.52, r * 2.24, r * 0.36, r * 0.16); c.fill();
+    c.strokeStyle = PEN.line; c.lineWidth = 0.011; c.stroke();
+    c.fillStyle = '#d93a34';
+    for (let i = -2; i <= 2; i++) { PEN.circle(c, x + i * r * 0.42, y + r * 0.7, r * 0.075); c.fill(); }
+    // 头巾结
+    PEN.ell(c, x + r * 1.06, y + r * 0.76, r * 0.2, r * 0.13);
+    PEN.shape(c, '#f7f1e0', 0.01);
+  },
+  /* 手里拎大铁勺 */
+  prop(c, A) {
+    c.save();
+    c.translate(A.handX, A.handY);
+    c.rotate(-0.35);
+    PEN.rr(c, -0.014, 0.02, 0.028, 0.34, 0.012);
+    PEN.shape(c, '#9aa1a8', 0.011);
+    PEN.ell(c, 0, 0.36, 0.078, 0.062);
+    PEN.shape(c, PEN.ball(c, 0, 0.36, 0.07, '#c8ced4', '#8d949c', '#5f666d'), 0.012);
+    c.restore();
+  },
+}, PROP.burly);
+
+/* ---------- 4. 疯狂小杨哥 ---------- */
+CHARDRAW.xiaoyang = makeHuman({
+  cloth: PEN.pal('#f2f4f7'), sleeve: PEN.pal('#f2f4f7'),
+  pants: PEN.pal('#2f333b'), skin: PEN.pal('#f5c6a1'),
+  shoe: PEN.pal('#ffffff'), shoeSole: '#d9dde3',
+  brow: '#1d1f24', blush: '#ff9d9d', mouthType: 'laugh',
+  clothDetail(c, R, bw, shY, front) {
+    const hipY = R.P.hipY;
+    // 帽衫口袋
+    PEN.rr(c, -bw * 0.45, hipY + 0.05, bw * 0.9, 0.11, 0.03);
+    PEN.shape(c, PEN.tone('#f2f4f7', 0.92), 0.01);
+    // 抽绳
+    c.strokeStyle = '#c8ced8'; c.lineWidth = 0.012;
+    c.beginPath(); c.moveTo(-0.03, R.P.shoulderY - 0.01); c.lineTo(-0.03, R.P.shoulderY - 0.16); c.stroke();
+    c.beginPath(); c.moveTo(0.03, R.P.shoulderY - 0.01); c.lineTo(0.03, R.P.shoulderY - 0.18); c.stroke();
+    // 印花
+    c.fillStyle = '#ffd34d';
+    PEN.circle(c, 0, (R.P.shoulderY + hipY) / 2 - 0.01, 0.038); c.fill();
+    c.fillStyle = '#262a31';
+    c.font = 'inherit';
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#1d1f24';
+    if (front) {
+      PEN.rr(c, x - r * 1.02, y + r * 0.34, r * 2.04, r * 0.56, r * 0.26); c.fill();
+      // 刘海
+      c.beginPath();
+      c.moveTo(x - r * 0.98, y + r * 0.66);
+      c.quadraticCurveTo(x - r * 0.5, y + r * 0.86, x - r * 0.1, y + r * 0.62);
+      c.quadraticCurveTo(x + r * 0.4, y + r * 0.9, x + r * 0.98, y + r * 0.62);
+      c.lineTo(x + r * 0.98, y + r * 1.05); c.lineTo(x - r * 0.98, y + r * 1.05);
+      c.closePath(); c.fill();
+    } else {
+      PEN.circle(c, x, y + r * 0.06, r * 1.04); c.fill();
+      PEN.rr(c, x - r * 1.0, y + r * 0.05, r * 2.0, r * 0.6, r * 0.28); c.fill();
+    }
+  },
+  prop(c, A) {
+    // 麦克风
+    c.save(); c.translate(A.handX, A.handY); c.rotate(-0.5);
+    PEN.rr(c, -0.024, 0.02, 0.048, 0.15, 0.018);
+    PEN.shape(c, '#2b2f36', 0.011);
+    PEN.circle(c, 0, 0.20, 0.042);
+    PEN.shape(c, PEN.ball(c, 0, 0.20, 0.04, '#d6dbe2', '#8d949c', '#5c626a'), 0.011);
+    c.restore();
+  },
+}, PROP.human);
+
+/* ---------- 5. 张同学 ---------- */
+CHARDRAW.zhangtongxue = makeHuman({
+  cloth: PEN.pal('#5c6b45'), sleeve: PEN.pal('#5c6b45'),
+  pants: PEN.pal('#2f3a44'), skin: PEN.pal('#e7b78c'),
+  shoe: PEN.pal('#3b2f26'), shoeSole: '#6b5a48',
+  brow: '#33291f', mouthType: 'straight',
+  clothDetail(c, R, bw, hw) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 棉服压线
+    c.strokeStyle = PEN.tone('#5c6b45', 0.78); c.lineWidth = 0.009;
+    for (let i = 1; i <= 3; i++) {
+      const yy = shY - 0.09 * i;
+      c.beginPath(); c.moveTo(-bw * 0.85, yy); c.lineTo(bw * 0.85, yy); c.stroke();
+    }
+    // 拉链
+    c.strokeStyle = '#8d8468'; c.lineWidth = 0.013;
+    c.beginPath(); c.moveTo(0, shY + 0.03); c.lineTo(0, hipY - 0.03); c.stroke();
+    // 斜挎带
+    c.strokeStyle = '#3a2f24'; c.lineWidth = 0.026;
+    c.beginPath(); c.moveTo(-bw * 0.9, shY + 0.02); c.lineTo(bw * 0.55, hipY + 0.02); c.stroke();
+  },
+  hair(c, x, y, r, front) {
+    // 棉帽（护耳）
+    c.fillStyle = '#3b4048';
+    PEN.circle(c, x, y + r * 0.28, r * 1.08); c.fill();
+    c.strokeStyle = PEN.line; c.lineWidth = 0.012; c.stroke();
+    PEN.rr(c, x - r * 1.16, y + r * 0.62, r * 2.32, r * 0.34, r * 0.14);
+    c.fillStyle = '#2b2f36'; c.fill();
+    c.strokeStyle = PEN.line; c.stroke();
+    // 帽檐
+    PEN.rr(c, x - r * 0.95, y + r * 0.86, r * 1.9, r * 0.26, r * 0.1);
+    c.fillStyle = '#23262c'; c.fill(); c.strokeStyle = PEN.line; c.stroke();
+    // 护耳
+    for (const sgn of [-1, 1]) {
+      PEN.rr(c, x + sgn * r * 0.92 - (sgn > 0 ? 0 : r * 0.28), y + r * 0.36, r * 0.28, r * 0.5, r * 0.12);
+      c.fillStyle = '#2b2f36'; c.fill(); c.strokeStyle = PEN.line; c.stroke();
+    }
+    // 露出的头发
+    c.fillStyle = '#2a2d33';
+    if (front) { PEN.rr(c, x - r * 0.8, y + r * 0.62, r * 1.6, r * 0.18, r * 0.08); c.fill(); }
+  },
+  prop(c, A) {
+    // 三脚架
+    c.save(); c.translate(A.handX, A.handY);
+    PEN.rr(c, -0.015, -0.02, 0.03, 0.30, 0.012);
+    PEN.shape(c, '#2b2f36', 0.01);
+    c.strokeStyle = '#2b2f36'; c.lineWidth = 0.016;
+    c.beginPath(); c.moveTo(0, 0.28); c.lineTo(-0.06, 0.36); c.moveTo(0, 0.28); c.lineTo(0.06, 0.36);
+    c.moveTo(0, 0.28); c.lineTo(0, 0.38); c.stroke();
+    c.restore();
+  },
+}, PROP.human);
+
+/* ---------- 6. 李子柒 ---------- */
+CHARDRAW.liziqi = makeHuman({
+  cloth: PEN.pal('#f7f3e8'), sleeve: PEN.pal('#f7f3e8'),
+  pants: PEN.pal('#e6ddc9'), skin: PEN.pal('#f8d3b6'),
+  shoe: PEN.pal('#6a5540'), shoeSole: '#4f3f2f',
+  brow: '#2b211c', blush: '#ff9d9d', mouthType: 'smirk',
+  legW: 0.082, armW: 0.072, footW: 0.105, footH: 0.046,
+  sleeveLen: 0.9,
+  clothDetail(c, R, bw, hw) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 交领
+    c.strokeStyle = '#b2432f'; c.lineWidth = 0.014;
+    c.beginPath();
+    c.moveTo(-bw * 0.6, shY + 0.02); c.lineTo(0.01, hipY + 0.09); c.lineTo(bw * 0.6, shY + 0.02);
+    c.stroke();
+    // 内衬
+    c.beginPath(); c.moveTo(-bw * 0.24, shY + 0.03); c.lineTo(0.005, hipY + 0.06); c.lineTo(bw * 0.24, shY + 0.03);
+    c.closePath();
+    PEN.shape(c, '#d9c6a8', 0.008);
+    // 腰带
+    PEN.rr(c, -hw * 1.06, hipY + 0.075, hw * 2.12, 0.05, 0.012);
+    PEN.shape(c, '#b2432f', 0.01);
+    // 下摆褶皱
+    c.strokeStyle = PEN.tone('#f7f3e8', 0.86); c.lineWidth = 0.008;
+    for (let i = -2; i <= 2; i++) {
+      c.beginPath(); c.moveTo(i * hw * 0.42, hipY + 0.03); c.lineTo(i * hw * 0.5, hipY - 0.06); c.stroke();
+    }
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#241d1a';
+    if (front) {
+      PEN.rr(c, x - r * 1.06, y + r * 0.28, r * 2.12, r * 0.66, r * 0.3); c.fill();
+      // 中分刘海
+      c.beginPath();
+      c.moveTo(x, y + r * 0.94);
+      c.quadraticCurveTo(x - r * 0.9, y + r * 0.9, x - r * 1.0, y + r * 0.3);
+      c.lineTo(x - r * 0.9, y + r * 0.62);
+      c.quadraticCurveTo(x - r * 0.4, y + r * 0.7, x, y + r * 0.94);
+      c.closePath(); c.fill();
+      c.beginPath();
+      c.moveTo(x, y + r * 0.94);
+      c.quadraticCurveTo(x + r * 0.9, y + r * 0.9, x + r * 1.0, y + r * 0.3);
+      c.lineTo(x + r * 0.9, y + r * 0.62);
+      c.quadraticCurveTo(x + r * 0.4, y + r * 0.7, x, y + r * 0.94);
+      c.closePath(); c.fill();
+      // 鬓发
+      PEN.cap(c, x - r * 0.96, y + r * 0.5, x - r * 0.86, y - r * 0.5, r * 0.24); c.fill();
+      PEN.cap(c, x + r * 0.96, y + r * 0.5, x + r * 0.86, y - r * 0.5, r * 0.24); c.fill();
+    } else {
+      PEN.circle(c, x, y + r * 0.08, r * 1.06); c.fill();
+      c.beginPath();
+      c.moveTo(x - r * 1.02, y + r * 0.5);
+      c.quadraticCurveTo(x, y - r * 1.15, x + r * 1.02, y + r * 0.5);
+      c.quadraticCurveTo(x, y - r * 0.2, x - r * 1.02, y + r * 0.5);
+      c.closePath(); c.fill();
+    }
+    // 发髻 + 发簪
+    PEN.circle(c, x, y + r * 1.14, r * 0.42);
+    c.fillStyle = '#241d1a'; c.fill();
+    c.strokeStyle = PEN.line; c.lineWidth = 0.01; c.stroke();
+    c.strokeStyle = '#c9a24b'; c.lineWidth = 0.014;
+    c.beginPath(); c.moveTo(x - r * 0.5, y + r * 1.3); c.lineTo(x + r * 0.5, y + r * 1.1); c.stroke();
+  },
+  clothDetail2() {},
+  prop(c, A) {
+    // 竹篮
+    c.save(); c.translate(A.handX, A.handY);
+    c.rotate(-0.15);
+    PEN.rr(c, -0.085, -0.02, 0.17, 0.12, 0.03);
+    PEN.shape(c, PEN.vertical(c, 0, 0.1, 0.12, '#e0b877', '#c99a54', '#a97f3c'), 0.011);
+    c.strokeStyle = '#a97f3c'; c.lineWidth = 0.009;
+    for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 0.03, -0.02); c.lineTo(i * 0.032, 0.1); c.stroke(); }
+    c.strokeStyle = '#8d6a34'; c.lineWidth = 0.013;
+    c.beginPath(); c.arc(0, 0.1, 0.07, Math.PI, 0); c.stroke();
+    // 果蔬
+    c.fillStyle = '#7cd44a';
+    PEN.circle(c, -0.035, 0.115, 0.026); c.fill();
+    PEN.circle(c, 0.03, 0.12, 0.024); c.fill();
+    c.fillStyle = '#e6423c';
+    PEN.circle(c, 0, 0.125, 0.022); c.fill();
+    c.restore();
+  },
+}, PROP.slim);
+
+/* ---------- 7. 刘教练 ---------- */
+CHARDRAW.liugenhong = makeHuman({
+  cloth: PEN.pal('#23b0d6'), sleeve: PEN.pal('#23b0d6'),
+  pants: PEN.pal('#37404c'), skin: PEN.pal('#eda76b'),
+  shoe: PEN.pal('#eef2f6'), shoeSole: '#c3c9d1',
+  brow: '#1e1c1a', mouthType: 'laugh',
+  legW: 0.10, armW: 0.094, footW: 0.122, footH: 0.05,
+  sleeveLen: 0.2,
+  shorts: false,
+  clothDetail(c, R, bw, hw) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 背心（露肩，大 V 领）
+    c.beginPath();
+    c.moveTo(-bw * 0.55, shY + 0.03);
+    c.lineTo(0, hipY - 0.02);
+    c.lineTo(bw * 0.55, shY + 0.03);
+    c.quadraticCurveTo(0, shY + 0.075, -bw * 0.55, shY + 0.03);
+    c.closePath();
+    PEN.shape(c, '#f7f9fb', 0.009);
+    // 胸肌线
+    c.strokeStyle = PEN.tone('#23b0d6', 0.7); c.lineWidth = 0.01;
+    c.beginPath(); c.moveTo(0, shY - 0.06); c.lineTo(0, hipY - 0.04); c.stroke();
+    // 腹肌
+    for (let i = 0; i < 3; i++) {
+      c.beginPath();
+      c.moveTo(-0.03, hipY + 0.12 + i * 0.05); c.lineTo(0.03, hipY + 0.12 + i * 0.05);
+      c.stroke();
+    }
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#1e1c1a';
+    if (front) { PEN.rr(c, x - r * 1.0, y + r * 0.42, r * 2.0, r * 0.48, r * 0.2); c.fill(); }
+    else { PEN.circle(c, x, y + r * 0.1, r * 0.98); c.fill(); }
+    // 运动发带
+    PEN.rr(c, x - r * 1.04, y + r * 0.56, r * 2.08, r * 0.22, r * 0.09);
+    PEN.shape(c, '#ff3b30', 0.011);
+  },
+  prop(c, A, back) {
+    if (back) return;
+    // 哑铃
+    c.save(); c.translate(A.handX, A.handY);
+    c.rotate(-0.25);
+    PEN.rr(c, -0.09, -0.012, 0.18, 0.024, 0.01);
+    PEN.shape(c, '#4b525c', 0.01);
+    for (const sgn of [-1, 1]) {
+      PEN.circle(c, sgn * 0.092, 0, 0.036);
+      PEN.shape(c, PEN.ball(c, sgn * 0.092, 0, 0.034, '#7d858f', '#3b4048', '#22262c'), 0.01);
+    }
+    c.restore();
+  },
+  propBack(c, A) {
+    // 另一只手也举哑铃，交替
+    c.save(); c.translate(A.handX, A.handY); c.rotate(0.25);
+    PEN.rr(c, -0.08, -0.011, 0.16, 0.022, 0.01);
+    PEN.shape(c, '#4b525c', 0.009);
+    for (const sgn of [-1, 1]) {
+      PEN.circle(c, sgn * 0.082, 0, 0.032);
+      PEN.shape(c, PEN.ball(c, sgn * 0.082, 0, 0.03, '#7d858f', '#3b4048', '#22262c'), 0.009);
+    }
+    c.restore();
+  },
+}, PROP.burly);
+
+/* ---------- 8. 董老师 ---------- */
+CHARDRAW.donglaoshi = makeHuman({
+  cloth: PEN.pal('#f8f8f6'), sleeve: PEN.pal('#f8f8f6'),
+  pants: PEN.pal('#2f3339'), skin: PEN.pal('#f3c7a1'),
+  shoe: PEN.pal('#3a3a3f'), shoeSole: '#6d6d74',
+  brow: '#22201f', mouthType: 'smirk',
+  clothDetail(c, R, bw, hw) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 马甲
+    c.beginPath();
+    c.moveTo(-bw * 1.0, shY + 0.03);
+    c.lineTo(-bw * 0.3, shY + 0.03);
+    c.lineTo(-bw * 0.22, hipY - 0.02);
+    c.lineTo(-bw * 1.0, hipY - 0.02);
+    c.closePath();
+    PEN.shape(c, PEN.vertical(c, 0, shY, hipY, '#414751', '#2c303a', '#20242c'), 0.011);
+    c.beginPath();
+    c.moveTo(bw * 1.0, shY + 0.03);
+    c.lineTo(bw * 0.3, shY + 0.03);
+    c.lineTo(bw * 0.22, hipY - 0.02);
+    c.lineTo(bw * 1.0, hipY - 0.02);
+    c.closePath();
+    PEN.shape(c, PEN.vertical(c, 0, shY, hipY, '#414751', '#2c303a', '#20242c'), 0.011);
+    // 扣子
+    for (let i = 0; i < 3; i++) { PEN.circle(c, 0, shY - 0.06 - i * 0.08, 0.011); PEN.shape(c, '#c9c9c9', 0.006); }
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#22201f';
+    if (front) { PEN.rr(c, x - r * 1.0, y + r * 0.4, r * 2.0, r * 0.52, r * 0.22); c.fill(); }
+    else { PEN.circle(c, x, y + r * 0.1, r * 1.0); c.fill(); }
+  },
+  face(c, x, y, r) {
+    CharArt.face(c, x, y, r, { skin: PEN.pal('#f3c7a1'), brow: '#22201f', mouthType: 'smirk', nose: false }, null);
+    // 眼镜
+    c.strokeStyle = '#2b2f36'; c.lineWidth = r * 0.06;
+    for (const sgn of [-1, 1]) {
+      c.beginPath(); c.arc(x + sgn * r * 0.42, y + r * 0.08, r * 0.28, 0, Math.PI * 2); c.stroke();
+    }
+    c.beginPath(); c.moveTo(x - r * 0.14, y + r * 0.08); c.lineTo(x + r * 0.14, y + r * 0.08); c.stroke();
+  },
+  prop(c, A) {
+    // 书
+    c.save(); c.translate(A.handX, A.handY);
+    c.rotate(-0.3);
+    PEN.rr(c, -0.075, -0.05, 0.15, 0.1, 0.012);
+    PEN.shape(c, PEN.ball(c, 0, 0, 0.09, '#a8703f', '#8d5a3b', '#6b4029'), 0.012);
+    PEN.rr(c, -0.068, -0.043, 0.136, 0.086, 0.006);
+    PEN.shape(c, '#fffdf6', 0.006);
+    c.strokeStyle = '#c8c2b4'; c.lineWidth = 0.007;
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-0.05, 0.02 - i * 0.026); c.lineTo(0.05, 0.02 - i * 0.026); c.stroke(); }
+    c.restore();
+  },
+}, PROP.slim);
+
+/* ---------- 9. 雨姐的鹅 ---------- */
+CHARDRAW.goose = function (c, pose) {
+  const R = CharArt.rig(pose, { hipY: 0.30, shoulderY: 0.56, headR: 0.115, shoulderW: 0.1, hipW: 0.07, leg: 0.3 });
+  const front = R.front;
+  const line = PEN.line, lw = 0.012;
+  const bodyC = PEN.pal('#fdfcf6'), beakC = PEN.pal('#ff9d1e');
+  const hipY = 0.30;
+
+  c.save();
+  if (R.tuck) { c.translate(0, 0.38); c.rotate(R.rot); c.translate(0, -0.38); }
+  c.translate(R.sway + R.lean * 0.04, R.bob);
+
+  // 腿
+  for (const L of R.legs) {
+    PEN.cap(c, L.hipX, hipY + 0.05, L.ankleX, L.ankleY + 0.03, 0.038);
+    PEN.shape(c, PEN.cyl(c, L.hipX, hipY, L.ankleX, L.ankleY, 0.038, '#ffb954', '#ff9d1e', '#d97d0c'), lw * 0.8);
+    c.save(); c.translate(L.ankleX, Math.max(0.02, L.ankleY));
+    PEN.ell(c, 0, 0, 0.058, 0.022);
+    PEN.shape(c, '#e07f0c', 0.01);
+    for (const sgn of [-1, 1]) { PEN.cap(c, 0, 0, sgn * 0.05, -0.012, 0.02); PEN.shape(c, '#e07f0c', 0.008); }
+    c.restore();
+  }
+  // 翅膀（扑棱）
+  const flap = Math.sin(R.ph * 2) * 0.25;
+  for (const sgn of [-1, 1]) {
+    c.save();
+    c.translate(sgn * 0.17, hipY + 0.14);
+    c.rotate(sgn * (0.55 + flap));
+    c.beginPath();
+    c.moveTo(0, 0.04);
+    c.quadraticCurveTo(sgn * 0.20, -0.02, sgn * 0.15, -0.22);
+    c.quadraticCurveTo(sgn * 0.05, -0.16, 0, 0.04);
+    c.closePath();
+    PEN.shape(c, PEN.cyl(c, 0, 0.04, sgn * 0.15, -0.22, 0.16, '#ffffff', '#f2f0e6', '#d5d2c6'), lw);
+    c.strokeStyle = '#d5d2c6'; c.lineWidth = 0.009;
+    c.beginPath(); c.moveTo(sgn * 0.03, -0.02); c.lineTo(sgn * 0.13, -0.16); c.stroke();
+    c.restore();
+  }
+  // 身体
+  c.beginPath();
+  c.moveTo(-0.20, hipY + 0.16);
+  c.bezierCurveTo(-0.26, hipY + 0.30, 0.26, hipY + 0.30, 0.20, hipY + 0.16);
+  c.bezierCurveTo(0.14, hipY - 0.02, -0.14, hipY - 0.02, -0.20, hipY + 0.16);
+  c.closePath();
+  PEN.shape(c, PEN.ball(c, 0, hipY + 0.14, 0.22, '#ffffff', '#f7f5ec', '#dcd9cd'), lw);
+  // 尾巴
+  c.beginPath();
+  c.moveTo(-0.18, hipY + 0.2);
+  c.quadraticCurveTo(-0.30, hipY + 0.26 + Math.sin(R.ph) * 0.03, -0.34, hipY + 0.14);
+  c.quadraticCurveTo(-0.26, hipY + 0.16, -0.18, hipY + 0.2);
+  c.closePath();
+  PEN.shape(c, '#e8e5d8', lw * 0.8);
+  // 脖子
+  const neckX = R.sway * 0.4;
+  PEN.cap(c, 0, hipY + 0.24, neckX, 0.80, 0.085);
+  PEN.shape(c, PEN.cyl(c, 0, hipY + 0.24, neckX, 0.80, 0.085, '#ffffff', '#f7f5ec', '#dcd9cd'), lw);
+  // 头
+  const hR = 0.125, hY = 0.885;
+  PEN.ell(c, neckX, hY, hR * 1.02, hR * 0.92);
+  PEN.shape(c, PEN.ball(c, neckX, hY, hR, '#ffffff', '#f7f5ec', '#dcd9cd'), lw);
+  // 喙
+  c.save();
+  c.translate(neckX, hY - hR * 0.12);
+  c.rotate(front ? Math.PI : 0);
+  c.beginPath();
+  c.moveTo(0, 0.03); c.quadraticCurveTo(0.14, 0.02, 0.15, -0.02);
+  c.quadraticCurveTo(0.06, -0.06, 0, -0.03);
+  c.closePath();
+  PEN.shape(c, PEN.ball(c, 0.07, 0, 0.08, '#ffc46b', '#ff9d1e', '#d97d0c'), lw);
+  c.restore();
+  // 眼睛
+  const ex = front ? 0.045 : -0.03;
+  PEN.circle(c, neckX + ex, hY + 0.045, 0.023);
+  PEN.shape(c, '#20232a', 0.008);
+  PEN.circle(c, neckX + ex + 0.008, hY + 0.055, 0.008);
+  PEN.shape(c, 'rgba(255,255,255,.9)', 0);
+  if (front) { PEN.circle(c, neckX - 0.045, hY + 0.04, 0.021); PEN.shape(c, '#20232a', 0.007); }
+  // 额头的红色突起（鹅脾气）
+  PEN.ell(c, neckX + (front ? -0.03 : 0.03), hY + 0.095, 0.028, 0.02);
+  PEN.shape(c, '#e6423c', 0.009);
+  // 腮红
+  if (front) {
+    c.globalAlpha = 0.3; c.fillStyle = '#ff8f7a';
+    c.beginPath(); c.arc(neckX - 0.07, hY - 0.03, 0.022, 0, 6.29); c.fill();
+    c.beginPath(); c.arc(neckX + 0.07, hY - 0.03, 0.022, 0, 6.29); c.fill();
+    c.globalAlpha = 1;
+  }
+  c.restore();
+};
+
+/* ---------- 10. 赛博奶蛙 ---------- */
+CHARDRAW.cybernaiwa = function (c, pose) {
+  const R = CharArt.rig(pose, { hipY: 0.32, shoulderY: 0.575, headR: 0.20, shoulderW: 0.095, hipW: 0.072, leg: 0.32, neck: 0.012 });
+  const front = R.front, lw = 0.014;
+  const metal = PEN.pal('#565d6b');
+  const metalD = PEN.pal('#3a404b');
+  const neon = '#26e9ff', neon2 = '#ff3ec8';
+  const hy = R.P.headY, hr = R.P.headR;
+  const hipY = R.P.hipY, shY = R.P.shoulderY;
+
+  c.save();
+  if (R.tuck) { c.translate(0, 0.40); c.rotate(R.rot); c.translate(0, -0.40); }
+  c.translate(R.sway + R.lean * 0.03, R.bob - R.squash * 0.05);
+
+  const glow = (x, y, r, col) => {
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = 0.75; c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  };
+
+  const drawLeg = (L, back) => {
+    const col = back ? metalD : metal;
+    PEN.cap(c, L.hipX, hipY, L.kneeX, L.kneeY, 0.10);
+    PEN.shape(c, PEN.cyl(c, L.hipX, hipY, L.kneeX, L.kneeY, 0.10, col.light, col.base, col.dark), lw);
+    PEN.cap(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY + 0.02, 0.082);
+    PEN.shape(c, PEN.cyl(c, L.kneeX, L.kneeY, L.ankleX, L.ankleY, 0.082, col.light, col.base, col.dark), lw);
+    // 霓虹关节
+    PEN.circle(c, L.kneeX, L.kneeY, 0.026);
+    c.fillStyle = neon; c.fill();
+    c.save(); c.translate(L.ankleX, Math.max(0.03, L.ankleY));
+    PEN.ell(c, 0, 0, 0.082, 0.04);
+    PEN.shape(c, '#2c303a', lw * 0.9);
+    c.fillStyle = neon; c.globalAlpha = 0.85;
+    PEN.rr(c, -0.055, -0.008, 0.11, 0.016, 0.008); c.fill();
+    c.globalAlpha = 1;
+    c.restore();
+    glow(L.kneeX, L.kneeY, 0.07, 'rgba(38,233,255,.55)');
+  };
+  const drawArm = (A, back) => {
+    const col = back ? metalD : metal;
+    const midX = A.shX + (A.elbX - A.shX) * 0.55, midY = A.shY + (A.elbY - A.shY) * 0.55;
+    PEN.cap(c, A.shX, A.shY, midX, midY, 0.076);
+    PEN.shape(c, PEN.cyl(c, A.shX, A.shY, midX, midY, 0.076, col.light, col.base, col.dark), lw);
+    PEN.cap(c, midX, midY, A.elbX, A.elbY, 0.066);
+    PEN.shape(c, PEN.cyl(c, midX, midY, A.elbX, A.elbY, 0.066, col.light, col.base, col.dark), lw);
+    PEN.cap(c, A.elbX, A.elbY, A.handX, A.handY, 0.06);
+    PEN.shape(c, PEN.cyl(c, A.elbX, A.elbY, A.handX, A.handY, 0.06, col.light, col.base, col.dark), lw);
+    PEN.circle(c, A.handX, A.handY, 0.042);
+    PEN.shape(c, neon2, 0.01);
+    glow(A.handX, A.handY, 0.075, 'rgba(255,62,200,.5)');
+  };
+
+  drawLeg(R.legs[0], true); drawArm(R.arms[0], true);
+  c.save(); c.translate(0, hipY); c.rotate(R.twist); c.translate(0, -hipY);
+  // 身体（装甲）
+  c.beginPath();
+  c.moveTo(-0.145, shY + 0.05);
+  c.bezierCurveTo(-0.30, shY - 0.03, -0.29, hipY + 0.02, -0.165, hipY - 0.06);
+  c.quadraticCurveTo(0, hipY - 0.10, 0.165, hipY - 0.06);
+  c.bezierCurveTo(0.29, hipY + 0.02, 0.30, shY - 0.03, 0.145, shY + 0.05);
+  c.quadraticCurveTo(0, shY + 0.10, -0.145, shY + 0.05);
+  c.closePath();
+  PEN.shape(c, PEN.vertical(c, 0, shY + 0.05, shY - hipY + 0.1, '#6c7484', '#4a505c', '#2c303a'), lw);
+  // 胸口能量核心
+  PEN.circle(c, 0, hipY + 0.09, 0.055);
+  PEN.shape(c, '#1b1f27', 0.012);
+  glow(0, hipY + 0.09, 0.14, 'rgba(38,233,255,.75)');
+  PEN.circle(c, 0, hipY + 0.09, 0.032);
+  c.fillStyle = neon; c.fill();
+  // 腹部霓虹线
+  c.strokeStyle = neon2; c.lineWidth = 0.012;
+  c.beginPath(); c.moveTo(-0.1, hipY - 0.02); c.lineTo(0.1, hipY - 0.02); c.stroke();
+  // 头（机械）
+  const headY = hy + 0.015;
+  PEN.circle(c, 0, headY, hr);
+  PEN.shape(c, PEN.ball(c, 0, headY, hr, '#7d8695', '#565d6b', '#333844'), lw);
+  // 面罩
+  c.beginPath();
+  c.moveTo(-hr * 0.86, headY - hr * 0.02);
+  c.quadraticCurveTo(0, headY - hr * 0.55, hr * 0.86, headY - hr * 0.02);
+  c.quadraticCurveTo(0, headY + hr * 0.3, -hr * 0.86, headY - hr * 0.02);
+  c.closePath();
+  PEN.shape(c, '#14181f', 0.012);
+  // 面罩上的奶蛙大嘴（霓虹）
+  c.strokeStyle = neon; c.lineWidth = 0.013;
+  c.beginPath();
+  if (front) {
+    c.moveTo(-hr * 0.5, headY - hr * 0.14);
+    c.quadraticCurveTo(0, headY - hr * 0.72, hr * 0.5, headY - hr * 0.14);
+  } else {
+    c.moveTo(-hr * 0.52, headY - hr * 0.1);
+    c.quadraticCurveTo(-hr * 0.72, headY + hr * 0.22, -hr * 0.42, headY + hr * 0.3);
+    c.moveTo(hr * 0.52, headY - hr * 0.1);
+    c.quadraticCurveTo(hr * 0.72, headY + hr * 0.22, hr * 0.42, headY + hr * 0.3);
+  }
+  c.stroke();
+  // 顶部发光眼
+  const ex = hr * 0.5, eyeY = headY + hr * 0.58;
+  for (const sgn of [-1, 1]) {
+    PEN.circle(c, sgn * ex, eyeY, hr * 0.38);
+    PEN.shape(c, PEN.ball(c, sgn * ex, eyeY, hr * 0.38, '#8a93a3', '#4d5462', '#2b303a'), lw * 0.9);
+    PEN.circle(c, sgn * ex + (front ? -sgn * hr * 0.04 : 0), eyeY + 0.004, hr * 0.26);
+    PEN.shape(c, '#0d1014', 0.008);
+    PEN.circle(c, sgn * ex + (front ? -sgn * hr * 0.04 : 0), eyeY + 0.004, hr * 0.13);
+    c.fillStyle = neon; c.fill();
+    glow(sgn * ex, eyeY, hr * 0.55, 'rgba(38,233,255,.55)');
+  }
+  // 天线
+  c.strokeStyle = neon2; c.lineWidth = 0.012;
+  c.beginPath(); c.moveTo(hr * 0.5, headY + hr * 0.9); c.lineTo(hr * 0.75, headY + hr * 1.35); c.stroke();
+  PEN.circle(c, hr * 0.75, headY + hr * 1.38, 0.018);
+  PEN.shape(c, neon2, 0.008);
+  c.restore();
+
+  drawLeg(R.legs[1], false); drawArm(R.arms[1], false);
+  c.restore();
+};
+
+/* ---------- 11. 检票员（追逐者） ---------- */
+CHARDRAW.inspector = makeHuman({
+  cloth: PEN.pal('#2c3e6b'), sleeve: PEN.pal('#2c3e6b'),
+  pants: PEN.pal('#243258'), skin: PEN.pal('#e7b78c'),
+  shoe: PEN.pal('#1a1a1f'), shoeSole: '#4a4a52',
+  brow: '#33291f', mouthType: 'straight',
+  clothDetail(c, R, bw, hw) {
+    const shY = R.P.shoulderY, hipY = R.P.hipY;
+    // 制服：双排扣 + 肩章 + 腰带
+    c.strokeStyle = '#e6c34a'; c.lineWidth = 0.011;
+    c.beginPath(); c.moveTo(-bw * 0.28, shY + 0.02); c.lineTo(-bw * 0.2, hipY - 0.02); c.stroke();
+    for (let i = 0; i < 3; i++) {
+      for (const sgn of [-1, 1]) {
+        PEN.circle(c, sgn * bw * 0.26, shY - 0.05 - i * 0.085, 0.012);
+        PEN.shape(c, '#e6c34a', 0.006);
+      }
+    }
+    // 肩章
+    PEN.rr(c, -bw * 1.0, shY + 0.005, bw * 0.5, 0.032, 0.012);
+    PEN.shape(c, '#e6c34a', 0.009);
+    PEN.rr(c, bw * 0.5, shY + 0.005, bw * 0.5, 0.032, 0.012);
+    PEN.shape(c, '#e6c34a', 0.009);
+    // 腰带
+    PEN.rr(c, -hw * 1.04, hipY + 0.07, hw * 2.08, 0.045, 0.012);
+    PEN.shape(c, '#1b1b20', 0.01);
+    PEN.rr(c, -0.028, hipY + 0.074, 0.056, 0.038, 0.008);
+    PEN.shape(c, '#c9a24b', 0.009);
+  },
+  hair(c, x, y, r, front) {
+    c.fillStyle = '#243258';
+    PEN.circle(c, x, y + r * 0.5, r * 1.08); c.fill();
+    c.strokeStyle = PEN.line; c.lineWidth = 0.011; c.stroke();
+    // 大盖帽
+    PEN.rr(c, x - r * 1.24, y + r * 0.74, r * 2.48, r * 0.3, r * 0.12);
+    c.fillStyle = '#1b2540'; c.fill(); c.strokeStyle = PEN.line; c.stroke();
+    c.beginPath();
+    c.moveTo(x - r * 0.9, y + r * 0.78); c.quadraticCurveTo(x, y + r * 1.5, x + r * 0.9, y + r * 0.78);
+    c.closePath();
+    c.fillStyle = '#243258'; c.fill(); c.strokeStyle = PEN.line; c.stroke();
+    // 帽徽
+    PEN.circle(c, x, y + r * 0.98, r * 0.13);
+    PEN.shape(c, '#e6c34a', 0.008);
+    // 帽檐
+    PEN.rr(c, x - r * 1.0, y + r * 0.6, r * 2.0, r * 0.2, r * 0.08);
+    c.fillStyle = '#141a30'; c.fill(); c.strokeStyle = PEN.line; c.stroke();
+  },
+  face(c, x, y, r) {
+    CharArt.face(c, x, y, r, { skin: PEN.pal('#e7b78c'), brow: '#33291f', mouthType: 'straight', nose: false }, null);
+    // 小胡子
+    c.fillStyle = '#3a2a20';
+    PEN.rr(c, x - r * 0.42, y - r * 0.3, r * 0.84, r * 0.12, r * 0.05); c.fill();
+  },
+  prop(c, A) {
+    // 检票钳
+    c.save(); c.translate(A.handX, A.handY); c.rotate(-0.4);
+    PEN.rr(c, -0.03, 0.01, 0.06, 0.1, 0.014);
+    PEN.shape(c, '#c0392b', 0.01);
+    PEN.rr(c, -0.02, 0.09, 0.04, 0.07, 0.008);
+    PEN.shape(c, '#9aa1a8', 0.01);
+    c.restore();
+  },
+}, PROP.human);
+
+/* ---------- 12. 狗（追逐者） ---------- */
+CHARDRAW.dog = function (c, pose) {
+  const R = CharArt.rig(pose, { hipY: 0.30, shoulderY: 0.5, headR: 0.1, shoulderW: 0.08, hipW: 0.06, leg: 0.3 });
+  const line = PEN.line, lw = 0.012;
+  const fur = PEN.pal('#c08a45'), furD = PEN.pal('#8f6129'), belly = '#efd6ae';
+  c.save();
+  if (R.tuck) { c.translate(0, 0.34); c.rotate(R.rot); c.translate(0, -0.34); }
+  c.translate(R.sway * 1.4 + R.lean * 0.04, R.bob * 1.5);
+
+  const hipY = 0.30;
+  // 四条腿
+  const legSets = [
+    { x: -0.155, lift: R.legs[0].lift },
+    { x: -0.075, lift: R.legs[1].lift },
+    { x: 0.075, lift: R.legs[0].lift },
+    { x: 0.155, lift: R.legs[1].lift },
+  ];
+  for (const L of legSets) {
+    const footY = 0.02 + L.lift * 0.16;
+    PEN.cap(c, L.x, hipY + 0.02, L.x + (L.x < 0 ? -0.012 : 0.012), footY, 0.046);
+    PEN.shape(c, PEN.cyl(c, L.x, hipY, L.x, footY, 0.046, furD.light, furD.base, furD.dark), lw * 0.85);
+    PEN.ell(c, L.x + (L.x < 0 ? -0.012 : 0.012), footY - 0.005, 0.038, 0.02);
+    PEN.shape(c, '#e2c79c', 0.009);
+  }
+  // 身体
+  PEN.ell(c, 0, hipY + 0.08, 0.24, 0.15);
+  PEN.shape(c, PEN.ball(c, 0, hipY + 0.08, 0.2, fur.light, fur.base, fur.dark), lw);
+  PEN.ell(c, 0, hipY - 0.02, 0.185, 0.06);
+  PEN.shape(c, belly, 0.008);
+  // 尾巴
+  c.save();
+  c.translate(-0.22, hipY + 0.1);
+  c.rotate(0.5 + Math.sin(R.ph * 2) * 0.4);
+  c.beginPath();
+  c.moveTo(0, 0.02); c.quadraticCurveTo(-0.06, 0.12, -0.02, 0.22);
+  c.quadraticCurveTo(0.04, 0.12, 0.03, 0.02);
+  c.closePath();
+  PEN.shape(c, furD.base, 0.011);
+  c.restore();
+  // 头
+  const hx = 0.235, hY = hipY + 0.22;
+  PEN.circle(c, hx, hY, 0.115);
+  PEN.shape(c, PEN.ball(c, hx, hY, 0.11, fur.light, fur.base, fur.dark), lw);
+  // 吻部
+  PEN.ell(c, hx + 0.09, hY - 0.03, 0.075, 0.055);
+  PEN.shape(c, '#e8cfa8', lw * 0.9);
+  PEN.ell(c, hx + 0.145, hY - 0.035, 0.028, 0.022);
+  PEN.shape(c, '#2b2521', 0.009);
+  // 耳朵
+  for (const sgn of [1, -1]) {
+    c.save();
+    c.translate(hx + sgn * 0.045, hY + 0.08);
+    c.rotate(sgn * 0.35);
+    PEN.ell(c, 0, 0, 0.04, 0.062);
+    PEN.shape(c, furD.base, 0.011);
+    c.restore();
+  }
+  // 眼睛 + 鼻子
+  PEN.circle(c, hx + 0.03, hY + 0.03, 0.022);
+  PEN.shape(c, '#20232a', 0.008);
+  PEN.circle(c, hx + 0.036, hY + 0.038, 0.008);
+  PEN.shape(c, 'rgba(255,255,255,.9)', 0);
+  PEN.circle(c, hx + 0.15, hY - 0.02, 0.026);
+  PEN.shape(c, '#2b2521', 0.008);
+  // 舌头
+  PEN.rr(c, hx + 0.105, hY - 0.075, 0.05, 0.06, 0.02);
+  PEN.shape(c, '#ff8b8b', 0.009);
+  // 项圈
+  PEN.rr(c, hx - 0.06, hY - 0.1, 0.1, 0.03, 0.012);
+  PEN.shape(c, '#e6423c', 0.009);
+  c.restore();
 };

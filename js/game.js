@@ -129,6 +129,7 @@ const Game = {
 
   /* ================= 更新 ================= */
   update(dt) {
+    if (this.devFreeze) return;             // 调试截图用：冻结世界只保留渲染
     this.elapsed += dt;
     const p = this.player;
 
@@ -812,13 +813,14 @@ Object.assign(Game, {
       rq.length = 0;
       for (const o of this.objs) {
         if (o.taken) continue;
+        // z 小于 2.6 的物体已经跑到摄像机与角色之间，放大后会糊满屏幕，直接剔除
         if (o.kind === 'train') {
           const z1 = rz(o.worldZ + o.len);
-          if (z1 < CFG.NEAR + 0.35 || rz(o.worldZ) > CFG.FAR) continue;
+          if (z1 < 2.6 || rz(o.worldZ) > CFG.FAR) continue;
           rq.push({ z: z1, o: o });
         } else {
           const zr = rz(o.worldZ);
-          if (zr < CFG.NEAR + 0.3 || zr > CFG.FAR) continue;
+          if (zr < 2.6 || zr > CFG.FAR) continue;
           rq.push({ z: zr, o: o });
         }
       }

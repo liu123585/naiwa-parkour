@@ -231,10 +231,33 @@
           }
           var warp = parseInt(qp.get('warp') || '0', 10);
           if (warp > 0) {
-            var t = Game.last;
-            for (var i = 0; i < warp; i++) { t += 16.7; Game.loop(t); }
+            // 只跑逻辑不渲染，快速把对局推进到中后期
+            var dt = 1 / 60;
+            for (var i = 0; i < warp; i++) {
+              Game.time += dt;
+              if (Game.state === 'run') Game.update(dt);
+            }
+            // 把角色挪到一条空车道，避免相机卡在车厢里影响截图观感
+            var best = 1, bestScore = -1;
+            for (var l = 0; l < 3; l++) {
+              var sc = 0;
+              var lx = Utils.laneX(l);
+              for (var k = 0; k < Game.objs.length; k++) {
+                var o = Game.objs[k];
+                if (o.kind === 'coin' || o.kind === 'power') { sc += 1; continue; }
+                if (Math.abs(o.x - lx) < 1.5 && o.worldZ < Game.travel + 30 && o.worldZ + (o.len || 0) > Game.travel - 2) sc -= 40;
+                if (Math.abs(o.x - lx) < 1.5 && o.kind === 'train' && o.worldZ < Game.travel + 2 && o.worldZ + o.len > Game.travel) sc -= 200;
+              }
+              if (sc > bestScore) { bestScore = sc; best = l; }
+            }
+            Game.player.lane = best;
+            Game.player.x = Utils.laneX(best);
+            Game.player.y = 0; Game.player.vy = 0;
+            Renderer.setCamera(Game.player.x * CFG.CAM_FOLLOW, CFG.CAM_Y);
+            Game.devFreeze = true;      // 冻结世界，截图时不会再跑进车厢
+            Game.render();
           }
-        }, 80);
+        }, 900);
       }
     } catch (err) {
       var b = document.getElementById('boot');

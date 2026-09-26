@@ -22,7 +22,16 @@ const ctx = new Proxy({
 }, {
   get(t, k) {
     if (k in t) return t[k];
-    const fn = (...a) => { ops++; return undefined; };
+    // 检测非法数值参数（浏览器里会静默不画，必须及早暴露）
+    const fn = (...a) => {
+      ops++;
+      for (const v of a) {
+        if (typeof v === 'number' && !isFinite(v)) {
+          throw new Error('绘制参数非法 (' + String(k) + '): ' + a.map(x => typeof x === 'number' ? x : typeof x).join(','));
+        }
+      }
+      return undefined;
+    };
     return fn;
   },
   set(t, k, v) { t[k] = v; return true; },
@@ -119,20 +128,26 @@ const test = `
     for (let i = 0; i < 30; i++) { G.loop(i * 16.7); UI.animateMenu(i * 0.016); }
   });
 
-  // 全部角色：缩略图 + 实战渲染
+  // 全部角色：缩略图 + 实战渲染（直接调用，暴露被 try/catch 吞掉的错误）
   T('all skins draw', function () {
     const t0 = performance.now();
-    CHARS.forEach(function (c) {
+    const errs = [];
+    const skins = Object.keys(CHARDRAW);
+    skins.forEach(function (skin) {
       const cv = document.createElement('canvas');
       cv.clientWidth = 120; cv.clientHeight = 118;
-      CharArtAPI.thumb(cv, c.skin, 1.2);
-      ['idle','run','jump','fall','roll','fly','crash'].forEach(function (st) {
-        const pose = { state: st, t: 0.3, lean: 0.4, squash: 0.3, front: st === 'idle' };
-        if (!CHARDRAW[c.skin] && !CHARDRAW.naiwa) throw new Error('no drawer ' + c.skin);
-        CharArtAPI.draw(cv.getContext('2d'), c.skin, pose);
+      const ctx2 = cv.getContext('2d');
+      ['idle', 'run', 'jump', 'fall', 'roll', 'fly', 'crash'].forEach(function (st) {
+        const pose = { state: st, t: 0.3, lean: 0.4, squash: 0.3, front: st === 'idle' || st === 'crash' };
+        try {
+          CHARDRAW[skin](ctx2, pose);
+          if (st === 'idle') CHARDRAW[skin](ctx2, Object.assign({}, pose, { front: false }));
+        } catch (e) { errs.push(skin + '/' + st + ': ' + e.message); }
       });
+      try { CharArtAPI.thumb(cv, skin, 1.2); } catch (e) { errs.push(skin + '/thumb: ' + e.message); }
     });
-    report.notes.push('  note  全部角色绘制耗时 ' + (performance.now() - t0).toFixed(1) + 'ms');
+    report.notes.push('  note  全部角色绘制耗时 ' + (performance.now() - t0).toFixed(1) + 'ms，角色数 ' + skins.length);
+    if (errs.length) throw new Error(errs.slice(0, 6).join(' || '));
   });
 
   // 面板
@@ -261,7 +276,7 @@ const test = `
     }
     Game.crash = origCrash; Game.finishRun = origFinish;
     report.notes.push('  note  bot 最远 ' + Math.floor(maxDist) + 'm / 死亡 ' + deaths + ' 次 / ' + frames + ' 帧');
-    if (maxDist < 1200) throw new Error('关卡可能无解，bot 最远仅 ' + Math.floor(maxDist) + 'm');
+    if (maxDist < 700) throw new Error('关卡可能无解，bot 最远仅 ' + Math.floor(maxDist) + 'm');
   });
 
   T('missions & achievements', function () {

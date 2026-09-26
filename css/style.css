@@ -267,3 +267,17 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
 @media (min-width:900px){
   .pad{display:none}
 }
+@media (max-width:560px){
+  .chip{padding:5px 9px;font-size:13px;gap:4px;border-radius:12px}
+  .chip-score b{font-size:15px}
+  .hud-left{gap:5px}
+  .hud-row{gap:6px}
+  .icon-btn{width:38px;height:38px;border-radius:12px}
+  .ico{width:15px;height:15px}
+  .power-item{min-width:110px;font-size:11px;padding:4px 8px 4px 6px}
+  .pad-btn{width:58px;height:58px;border-radius:18px}
+  .pad-arrow{width:62px}
+  .menu-inner{gap:8px}
+  .stat-pill{padding:6px 11px;font-size:12px}
+  .btn-xl{padding:15px 40px;font-size:22px}
+}

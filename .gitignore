@@ -1,9 +1,9 @@
 node_modules/
+.env
+.env.*
 .DS_Store
 Thumbs.db
 *.log
+.shots/
+screenshots/
 .edgeone/
-.vercel/
-shots/
-*.png
-!img/*.png

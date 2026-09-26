@@ -22,8 +22,8 @@ const THEMES = {
   },
   night: {
     name: '霓虹夜轨', skyTop: '#0b1030', skyBot: '#25336b', sun: '#dff0ff', sunGlow: 'rgba(200,225,255,.55)',
-    fog: '#26305e', ballast: '#43464f', ballast2: '#383b43', sleeper: '#33353c', sleeper2: '#2a2c33',
-    rail: '#8b93a4', railTop: '#dfe8f6', wall: '#4a4f5e', wallDark: '#383c48', wallTop: '#666c7c',
+    fog: '#26305e', ballast: '#4c5059', ballast2: '#3f434b', sleeper: '#383a41', sleeper2: '#2e3037',
+    rail: '#8b93a4', railTop: '#dfe8f6', wall: '#3a3f4c', wallDark: '#2c303a', wallTop: '#4d5362',
     bldg: ['#2c3350', '#232a44', '#39415f'], win: 'rgba(255,226,150,.75)', lamp: '#ffe6a0',
     ground: '#2f3a30', overlay: 'rgba(20,30,80,.30)', star: 1, rain: 0, night: 1,
   },
@@ -305,7 +305,7 @@ const Renderer = {
       const pgap = 9;
       for (let i = Math.floor(CFG.FAR / pgap); i >= 0; i--) {
         const z = i * pgap - (travel % pgap);
-        if (z < CFG.NEAR + 1 || z > CFG.FAR * 0.8) continue;
+        if (z < 9 || z > CFG.FAR * 0.8) continue;   // 贴脸的面板会被放大成巨块，直接跳过
         const seed = Math.floor((travel - travel % pgap) / pgap) + i;
         const y0 = 0.45 + ((seed * 37) % 10) / 40, y1 = y0 + 1.15;
         const p1 = this.proj(x, y0, z), p2 = this.proj(x, y1, z + 3.4);
@@ -320,7 +320,7 @@ const Renderer = {
       // 立柱
       for (let i = Math.floor(CFG.FAR / 12); i >= 0; i--) {
         const z = i * 12 - (travel % 12);
-        if (z < CFG.NEAR + 0.5 || z > CFG.FAR * 0.85) continue;
+        if (z < 5 || z > CFG.FAR * 0.85) continue;
         const a = this.proj(x, 0, z), b = this.proj(x, wallH + 0.35, z);
         if (!a || !b) continue;
         const wdt = 0.28 * a.s;
@@ -332,7 +332,7 @@ const Renderer = {
       // 路灯（夜间发光）—— 已由接触网立柱承担，这里只保留灯头
       for (let i = Math.floor(CFG.FAR / 18); i >= 0; i--) {
         const z = i * 18 - (travel % 18) + 4;
-        if (z < CFG.NEAR + 1 || z > CFG.FAR * 0.9) continue;
+        if (z < 6 || z > CFG.FAR * 0.9) continue;
         const lx = sgn * (CFG.WALL_X - 0.35);
         const bp = this.proj(lx, wallH, z), tp = this.proj(lx, wallH + 1.5, z);
         if (!bp || !tp) continue;
@@ -351,8 +351,10 @@ const Renderer = {
   /* ---------------- 接触网（架空电线 + 支架），增强「地铁/铁道」感 ---------------- */
   drawCatenary(theme, travel) {
     const c = this.c;
+    c.save();
     const hy = 4.15;
     // 沿轨道的接触线
+    c.globalAlpha = 0.42;
     c.strokeStyle = this.shadeCol(theme.rail, 0.8);
     c.lineWidth = 1.4;
     for (let ln = 0; ln < CFG.LANES; ln++) {
@@ -368,7 +370,7 @@ const Renderer = {
     const gap = 22;
     for (let i = Math.floor(CFG.FAR / gap); i >= 0; i--) {
       const z = i * gap - (travel % gap);
-      if (z < CFG.NEAR + 1.5 || z > CFG.FAR * 0.9) continue;
+      if (z < 5 || z > CFG.FAR * 0.9) continue;
       const l = this.proj(-CFG.WALL_X + 0.15, hy + 0.25, z), r = this.proj(CFG.WALL_X - 0.15, hy + 0.25, z);
       if (!l || !r) continue;
       c.strokeStyle = this.shadeCol(theme.wallDark, 0.95);
@@ -384,18 +386,21 @@ const Renderer = {
         c.fillRect(Math.min(b0.sx, t0.sx) - wdt / 2, t0.sy, wdt, Math.max(1, b0.sy - t0.sy));
       }
     }
+    c.restore();
   },
 
   /* ---------------- 3D 方盒 ---------------- */
   boxFaces(o, cb) {
-    const z0 = Math.max(o.z0, CFG.NEAR + 0.03), z1 = o.z1;
+    const z0 = Math.max(o.z0, 1.15), z1 = o.z1;
     if (z1 <= CFG.NEAR + 0.05) return null;
+    // 摄像机若位于箱体内部（仅调试穿模时会出现）则不画，避免出现巨大色块
+    if (o.z0 < CFG.NEAR && this.camX > o.x0 - 0.3 && this.camX < o.x1 + 0.3) return null;
     const p = (x, y, z) => this.proj(x, y, z);
     const A = p(o.x0, o.y0, z0), B = p(o.x1, o.y0, z0), C = p(o.x1, o.y1, z0), D = p(o.x0, o.y1, z0);
     const E = p(o.x0, o.y1, z1), F = p(o.x1, o.y1, z1);
     const G = p(o.x0, o.y0, z1), H = p(o.x1, o.y0, z1);
     if (!A || !B || !F || !G) return null;
-    const res = { front: null, top: null, side: null, near: o.z0 > CFG.NEAR + 0.05 };
+    const res = { front: null, top: null, side: null, near: o.z0 > 2.5 };
     if (res.near && C && D) res.front = [A, B, C, D];
     if (this.camY > o.y1 && E && F) res.top = [D, C, F, E];
     if (this.camX < o.x0 && E && G) res.side = [A, D, E, G];
@@ -454,13 +459,25 @@ const Renderer = {
       band(0.94, 1.0, 'rgba(255,255,255,.35)');
     }
     if (F.side && o.windows !== false) {
-      // 侧面车窗条纹
+      // 侧面：下裙板 + 一排车窗 + 分节缝
       const [A, D, E, G] = F.side;
       const mix = (p, q, t) => ({ sx: p.sx + (q.sx - p.sx) * t, sy: p.sy + (q.sy - p.sy) * t });
-      const ra = mix(D, E, 0.28), rb = mix(D, E, 0.72), rc = mix(A, G, 0.72), rd = mix(A, G, 0.28);
-      c.fillStyle = 'rgba(25,33,48,.55)';
-      c.beginPath(); c.moveTo(ra.sx, ra.sy); c.lineTo(rb.sx, rb.sy); c.lineTo(rc.sx, rc.sy); c.lineTo(rd.sx, rd.sy);
-      c.closePath(); c.fill();
+      // t 为沿车长的比例，f 为高度比例（0 底 / 1 顶）
+      const pt = (t, f) => {
+        const b = mix(A, G, t), tp = mix(D, E, t);
+        return { sx: b.sx + (tp.sx - b.sx) * f, sy: b.sy + (tp.sy - b.sy) * f };
+      };
+      this.fillQuad([pt(0, 0), pt(1, 0), pt(1, 0.15), pt(0, 0.15)], 'rgba(0,0,0,.24)');
+      const segs = Math.max(2, Math.min(7, Math.round(o.len / 4)));
+      const winCol = (this.theme.night > 0.35) ? 'rgba(255,236,170,.72)' : 'rgba(28,38,56,.6)';
+      for (let k = 0; k < segs; k++) {
+        const a = (k + 0.18) / segs, b = (k + 0.82) / segs;
+        this.fillQuad([pt(a, 0.44), pt(b, 0.44), pt(b, 0.86), pt(a, 0.86)], winCol);
+        if (k > 0) {
+          const s = k / segs, e = s + 0.006;
+          this.fillQuad([pt(s, 0.1), pt(e, 0.1), pt(e, 0.96), pt(s, 0.96)], 'rgba(0,0,0,.28)');
+        }
+      }
     }
     c.globalAlpha = 1;
   },
@@ -694,11 +711,11 @@ const Renderer = {
   /* 雾气：掩盖远景突然出现 */
   drawFog(theme) {
     const c = this.c;
-    const g = c.createLinearGradient(0, this.horizon - 4, 0, this.horizon + this.H * 0.22);
-    g.addColorStop(0, theme.fog); g.addColorStop(1, 'rgba(255,255,255,0)');
-    c.globalAlpha = 0.92;
+    const g = c.createLinearGradient(0, this.horizon - 4, 0, this.horizon + this.H * 0.18);
+    g.addColorStop(0, theme.fog); g.addColorStop(0.55, theme.fog); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.globalAlpha = 0.7;
     c.fillStyle = g;
-    c.fillRect(0, this.horizon - 4, this.W, this.H * 0.24);
+    c.fillRect(0, this.horizon - 4, this.W, this.H * 0.2);
     c.globalAlpha = 1;
   },
 };
