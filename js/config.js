@@ -33,7 +33,7 @@ const CFG = {
   LANE_SNAP: 12.5,        // 变道横向速度
   BOOST_BOARD_SAVE: 1.6,  // 悬浮板碎掉后的无敌时间
 
-  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30 },
+  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30, shield: 11 },
 
   COIN_VALUE: 1,
   SCORE_PER_M: 1.0,
@@ -146,6 +146,7 @@ const POWERS = [
   { id: 'x2', name: '双倍金币', color: '#ffd34d', weight: 24 },
   { id: 'shoe', name: '超级跑鞋', color: '#ff9d4d', weight: 22 },
   { id: 'board', name: '悬浮板', color: '#ff6bd0', weight: 16 },
+  { id: 'shield', name: '护盾', color: '#2ee6d6', weight: 20 },
 ];
 
 /* ---------------- 任务池 ---------------- */
@@ -202,6 +203,18 @@ const SAVE_KEY = 'naiwaRun.save.v1';
 
 const DEFAULT_SAVE = {
   coins: 0,
+  difficulty: 'normal',
+  map: 'city',
+  mapsUnlocked: ['city', 'changan'],
+  outfits: {},            // skin -> 已穿戴的服装 id
+  outfitOwned: {},        // skin -> [已购服装 id]
+  codexSeen: [],          // 已见过的障碍 id
+  challenges: [],         // 已完成的挑战 id
+  bestByMap: {},          // mapId -> { easy:0, normal:0, hard:0 }
+  playCount: {},
+  playerName: '',
+  cloudId: '',
+  cloudBest: 0,
   best: 0,
   runs: 0,
   totalDist: 0,
@@ -235,6 +248,15 @@ const Store = {
     SKILLS.forEach(s => { if (typeof this.data.skills[s.id] !== 'number') this.data.skills[s.id] = 0; });
     this.data.settings = Object.assign({}, DEFAULT_SAVE.settings, this.data.settings || {});
     if (typeof this.data.boardCount !== 'number') this.data.boardCount = 3;
+    if (typeof this.data.difficulty !== 'string') this.data.difficulty = 'normal';
+    if (typeof this.data.map !== 'string') this.data.map = 'city';
+    ['mapsUnlocked', 'codexSeen', 'challenges'].forEach(k => {
+      if (!Array.isArray(this.data[k])) this.data[k] = DEFAULT_SAVE[k].slice();
+    });
+    if (!this.data.mapsUnlocked.length) this.data.mapsUnlocked = ['city', 'changan'];
+    ['outfits', 'outfitOwned', 'bestByMap', 'playCount'].forEach(k => {
+      if (!this.data[k] || typeof this.data[k] !== 'object') this.data[k] = {};
+    });
     return this.data;
   },
   save() {

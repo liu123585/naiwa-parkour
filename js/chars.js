@@ -367,8 +367,14 @@ const CharArt = {
     g.addColorStop(0, 'rgba(0,0,0,.22)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     c.fillStyle = g;
     c.beginPath(); c.ellipse(w / 2, h * 0.95, w * 0.34, h * 0.055, 0, 0, Math.PI * 2); c.fill();
-    // 悬浮光圈（限定角色）
+    // 有 AI 立绘就优先用立绘
+    const port = (typeof ART !== 'undefined' && ART.portrait) ? ART.portrait(skin) : null;
     const hp = h * 0.9;
+    if (port) {
+      const w2 = hp * (port.width / port.height);
+      c.drawImage(port, (w - w2) / 2, h * 0.96 - hp, w2, hp);
+      return;
+    }
     c.save();
     c.translate(w / 2, h * 0.96);
     c.scale(hp, -hp);

@@ -84,6 +84,8 @@ const UI = {
       powerBar: q('powerBar'), comboTag: q('comboTag'), toast: q('toast'),
       menu: q('screenMenu'), chars: q('screenChars'), missions: q('screenMissions'),
       settings: q('screenSettings'), pause: q('screenPause'), over: q('screenOver'),
+      maps: q('screenMaps'), codex: q('screenCodex'), path: q('screenPath'),
+      outfits: q('screenOutfits'), rank: q('screenRank'), join: q('screenJoin'),
       hero: q('heroCanvas'), menuBest: q('menuBest'), menuCoins: q('menuCoins'), menuTotal: q('menuTotal'),
       charsBody: q('charsBody'), charsCoins: q('charsCoins'), missionsBody: q('missionsBody'), missionCoins: q('missionCoins'),
       boot: q('boot'), countdown: q('countdown'), menuTip: q('menuTip'), pad: document.querySelector('.pad'),
@@ -106,13 +108,20 @@ const UI = {
 
   /* ---------------- 屏幕切换 ---------------- */
   hideAllScreens() {
-    ['menu', 'chars', 'missions', 'settings', 'pause', 'over'].forEach(k => this.el[k].classList.add('hidden'));
+    ['menu', 'chars', 'missions', 'settings', 'pause', 'over',
+      'maps', 'codex', 'path', 'outfits', 'rank', 'join'].forEach(k => {
+      if (this.el[k]) this.el[k].classList.add('hidden');
+    });
     this.stopCardAnim();
   },
   showMenu() {
     this.hideAllScreens();
     this.el.hud.classList.add('hidden');
     this.el.menu.classList.remove('hidden');
+    if (typeof Panels !== 'undefined' && Panels.el.diffPick) {
+      Panels.buildDiffPick();
+      Panels.refreshMenuNow();
+    }
     this.refreshCoins();
     this.el.menuBest.textContent = Utils.fmt(Store.data.best);
     this.el.menuTotal.textContent = Utils.fmt(Store.data.totalDist);
@@ -241,6 +250,14 @@ const UI = {
   /* ---------------- 菜单英雄展示 ---------------- */
   animateMenu(time) {
     if (this.el.menu.classList.contains('hidden')) return;
+    // 首次进菜单时后台预热 AI 素材
+    if (!this._artWarm) {
+      this._artWarm = true;
+      if (typeof ART !== 'undefined') {
+        ART.ensure(Store.data.char);
+        ART.preloadAll(CHARS.map(c => c.skin));
+      }
+    }
     const ch = CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa;
     const cv = this.el.hero;
     const w = cv.clientWidth || 300, h = cv.clientHeight || 300;
@@ -250,14 +267,28 @@ const UI = {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
     const bounce = Math.sin(time * 2.2) * 0.02;
-    const hp = h * 0.78;
-    c.save();
-    c.translate(w / 2 + Math.sin(time * 1.3) * 4, h * 0.94);
-    c.scale(hp, -hp);
+    const hp = h * 0.80;
     const laughing = (Math.sin(time * 0.7) > 0.55) ? 1 : 0;
-    const pose = { state: 'idle', t: (time * 1.1) % 1, lean: Math.sin(time * 1.3) * 0.25, squash: bounce, front: true };
-    CharArtAPI.draw(c, ch.skin, pose);
-    c.restore();
+    const port = (typeof ART !== 'undefined' && ART.portrait) ? ART.portrait(ch.skin) : null;
+    if (port) {
+      // AI 立绘：轻微呼吸 + 摇摆
+      const w2 = hp * (port.width / port.height);
+      const sway = Math.sin(time * 1.6) * 0.012;
+      const dy = Math.sin(time * 2.2) * 0.01;
+      c.save();
+      c.translate(w / 2, h * 0.96);
+      c.rotate(sway);
+      c.scale(1 + dy * 0.5, 1 + dy);
+      c.drawImage(port, -w2 / 2, -hp, w2, hp);
+      c.restore();
+    } else {
+      c.save();
+      c.translate(w / 2 + Math.sin(time * 1.3) * 4, h * 0.94);
+      c.scale(hp, -hp);
+      const pose = { state: 'idle', t: (time * 1.1) % 1, lean: Math.sin(time * 1.3) * 0.25, squash: bounce, front: true };
+      CharArtAPI.draw(c, ch.skin, pose);
+      c.restore();
+    }
     // 飘出的音符/笑声
     if (laughing) {
       c.globalAlpha = 0.85;
@@ -316,6 +347,7 @@ const UI = {
   },
   startCardAnim() {
     this.stopCardAnim();
+    if (typeof ART !== 'undefined') ART.preloadAll(CHARS.map(c => c.skin));
     const tick = () => {
       if (this.el.chars.classList.contains('hidden')) { this._cardTick = null; return; }
       const t = performance.now() / 1000;
@@ -454,7 +486,7 @@ const UI = {
     };
     // 关闭按钮 / 点击空白
     document.querySelectorAll('.panel-close').forEach(b => b.onclick = () => { Sound.ui(); this.hideAllScreens(); this.showMenu(); });
-    ['chars', 'missions', 'settings'].forEach(k => {
+    ['chars', 'missions', 'settings', 'maps', 'codex', 'path', 'outfits', 'rank', 'join'].forEach(k => {
       this.el[k].addEventListener('click', (e) => {
         if (e.target === this.el[k]) { Sound.ui(); this.hideAllScreens(); this.showMenu(); }
       });

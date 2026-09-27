@@ -55,22 +55,28 @@ const Game = {
 
   /* ================= 开局 / 重置 ================= */
   reset() {
+    // 难度 + 世界地图（高仿：三档难度、多地巡游）
+    const dm = (typeof World !== 'undefined') ? World.cur() : { diff: { speedStart: 28, speedMax: 48, accel: 0.53, obstacleRate: 1, coinRate: 1, scoreMul: 1, name: '普通' }, map: null };
+    this.diff = dm.diff; this.mapDef = dm.map;
     this.time = 0; this.elapsed = 0; this.travel = 0; this.speed = 0;
     this.score = 0; this.runCoins = 0; this.mult = 1; this.maxMult = 1;
     this.coinStreak = 0; this.objs = []; this.parts = []; this.nextZ = 46;
     this.invuln = 0; this.dying = 0; this.hurtFlash = 0; this.shake = 0;
     this.reviveUsed = 0; this.springs = 0;
-    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0 };
+    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0 };
     this.player = {
       x: 0, y: 0, vy: 0, lane: 1, state: 'run', phase: 0,
       rollT: 0, grounded: true, supportY: 0, squash: 0, lean: 0, boardT: 0,
     };
     this.camera.x = 0; this.camera.shake = 0;
-    this.runStats = { coins: 0, jumps: 0, rolls: 0, roofs: 0, boardDist: 0, magnet: 0, jet: 0, boards: 0, best: 0 };
+    this.runStats = { coins: 0, jumps: 0, rolls: 0, roofs: 0, boardDist: 0, magnet: 0, jet: 0, boards: 0, best: 0, near: 0, powers: 0, hits: 0 };
+    this.chase = { hits: 0, grace: 0, active: false };     // 第一次撞击引来追兵，7 秒内再撞被抓
     this.themeTimer = 26;
-    this.themeFrom = this.themeTo = THEMES.day; this.themeT = 1; this.theme = THEMES.day;
+    const base = (this.mapDef && this.mapDef.forceNight) ? THEMES.night : THEMES.day;
+    this.themeFrom = this.themeTo = this.theme = base;
+    this.themeT = 1;
     this.intro = 1.25;
-    this.chaser = { on: true, dist: 4.6, mode: 'intro', t: 0 };
+    this.chaser = { on: false, dist: 9.0, mode: 'idle', t: 0 };
   },
 
   start() {
@@ -146,14 +152,15 @@ const Game = {
       return;
     }
 
-    /* ---- 开场加速 ---- */
+    /* ---- 开场加速（速度曲线按难度：先陡后平） ---- */
+    const D = this.diff || { speedStart: 28, speedMax: 48, accel: 0.53 };
     if (this.intro > 0) {
       this.intro -= dt;
-      this.speed = Math.min(CFG.SPEED_START, this.speed + dt * 30);
+      this.speed = Math.min(D.speedStart, this.speed + dt * 30);
     }
     const ch = this.charDef();
     const jetOn = this.powers.jet > 0;
-    let target = Math.min(CFG.SPEED_MAX, CFG.SPEED_START + this.elapsed * CFG.SPEED_ACCEL + this.travel * 0.0011);
+    let target = Math.min(D.speedMax, D.speedStart + this.elapsed * D.accel + this.travel * 0.0011);
     if (jetOn) target = Math.max(target, CFG.SPEED_JET);
     this.speed = jetOn ? Utils.lerp(this.speed, target, 1 - Math.pow(0.05, dt))
       : Utils.lerp(this.speed, target, 1 - Math.pow(0.35, dt));
@@ -175,6 +182,7 @@ const Game = {
       }
     }
     if (this.powers.board > 0) this.runStats.boardDist += this.speed * dt;
+    if (p.supportY > 0.25) this.runStats.roofDist = (this.runStats.roofDist || 0) + this.speed * dt;
 
     /* ---- 角色状态与物理 ---- */
     p.phase += dt * (1.9 + this.speed * 0.055) * (p.state === 'roll' ? 0.5 : 1);
@@ -273,19 +281,41 @@ const Game = {
     /* ---- 粒子 ---- */
     this.updateParticles(dt);
 
-    /* ---- 主题切换 ---- */
+    /* ---- 主题切换（叠加当前世界地图色调） ---- */
     this.themeTimer -= dt;
-    if (this.themeTimer <= 0) {
+    if (this.themeTimer <= 0 && !(this.mapDef && this.mapDef.forceNight)) {
       this.themeTimer = Utils.rand(34, 52);
-      const order = ['day', 'dusk', 'night', 'rain', 'night', 'day'];
       this.themeFrom = this.theme;
       this.themeTo = THEMES[Utils.pick(['day', 'dusk', 'night', 'rain'])];
       this.themeT = 0;
       UI.toast('天气变化：' + this.themeTo.name);
     }
-    if (this.themeT < 1) {
-      this.themeT = Math.min(1, this.themeT + dt / 2.4);
-      this.theme = mixTheme(this.themeFrom, this.themeTo, this.themeT);
+    const cycle = (this.themeT < 1) ? mixTheme(this.themeFrom, this.themeTo, Math.min(1, this.themeT + dt / 2.4)) : this.themeTo;
+    if (this.themeT < 1) this.themeT = Math.min(1, this.themeT + dt / 2.4);
+    this.theme = (typeof World !== 'undefined') ? World.applyMap(cycle, this.mapDef) : cycle;
+
+    /* ---- 追逐容错倒计时（高仿：7 秒内再次撞击就被抓） ---- */
+    const cs = this.chase;
+    if (cs && cs.active) {
+      cs.grace -= dt;
+      this.chaser.on = true;
+      this.chaser.mode = 'chase';
+      this.chaser.dist = Utils.lerp(this.chaser.dist, 2.6, 1 - Math.pow(0.4, dt));
+      if (cs.grace <= 0) {           // 撑过去了：追兵放弃
+        cs.active = false; cs.hits = 0;
+        this.chaser.dist = 9.5;
+        UI.toast('甩掉检票员了！');
+      }
+    } else if (this.chaser && this.chaser.on && this.chaser.mode !== 'catch') {
+      this.chaser.dist = Utils.lerp(this.chaser.dist, 9.5, 1 - Math.pow(0.5, dt));
+      if (this.chaser.dist > 9.2) this.chaser.on = false;
+    }
+    if (this.runStats && cs && cs.active) this.runStats.chaseLeft = Math.ceil(cs.grace);
+
+    /* ---- 障碍图鉴：经过即记录 ---- */
+    for (const o of this.objs) {
+      if (o.seen || o.kind === 'coin' || o.kind === 'power') continue;
+      if (o.worldZ + (o.len || 0) < this.travel) { o.seen = true; this.markCodex(o); }
     }
 
     /* ---- 任务进度 ---- */
@@ -386,6 +416,7 @@ const Game = {
     if (kind === 'board') { this.startBoard(); }
     else { this.powers[kind] = Math.max(this.powers[kind], this.powerDur(kind)); }
     Store.data.powerUses++;
+    if (this.runStats) this.runStats.powers = (this.runStats.powers || 0) + 1;
     Missions.progress(kind === 'board' ? 'board' : kind, 1);
     if (!silent) {
       UI.toast('获得 ' + info.name);
@@ -494,6 +525,7 @@ const Game = {
     this.nearMissCd = 0.6;
     const bonus = CFG.NEAR_MISS_SCORE * this.mult;
     this.score += bonus;
+    if (this.runStats) this.runStats.near = (this.runStats.near || 0) + 1;
     this.coinStreak++;
     if (this.coinStreak % 5 === 0) UI.combo('漂亮！x' + this.coinStreak);
     Sound.whoosh();
@@ -518,6 +550,18 @@ const Game = {
     if (Renderer.fxLow !== true || this.parts.length < 60) this.spawnBurst(o.x, o.y, 4, '#ffe9a8', 0.28);
   },
 
+  /* 障碍图鉴：记录见过的障碍 */
+  markCodex(o) {
+    try {
+      const id = CODEX_MAP[o.type] || (o.kind === 'train' ? 'train_high' : null);
+      if (!id) return;
+      if (Store.data.codexSeen.indexOf(id) < 0) {
+        Store.data.codexSeen.push(id);
+        Store.save();
+      }
+    } catch (e) { /* 忽略 */ }
+  },
+
   crash(o) {
     if (this.god) return;                    // 调试模式：无敌
     const p = this.player;
@@ -525,6 +569,30 @@ const Game = {
       this.breakBoard(false);
       p.vy = Math.max(p.vy, 6.5);
       this.shake = 1.0;
+      return;
+    }
+    if (this.powers.shield > 0) {           // 护盾挡一命
+      this.powers.shield = 0;
+      this.invuln = Math.max(this.invuln, 2.2);
+      this.shake = 1.1;
+      this.spawnBurst(p.x, p.y + 0.9, 24, '#2ee6d6', 1.1);
+      Sound.boardBreak();
+      UI.toast('护盾挡下了这一下！');
+      UI.updateHUD(this);
+      return;
+    }
+    this.markCodex(o);
+    /* 高仿失败机制：第一次撞击引来追兵，7 秒内再次撞击就被抓住 */
+    const cs = this.chase || (this.chase = { hits: 0, grace: 0, active: false });
+    if (cs.hits === 0) {
+      cs.hits = 1; cs.grace = 7; cs.active = true;
+      this.chaser.on = true; this.chaser.mode = 'chase'; this.chaser.dist = 3.4;
+      this.invuln = Math.max(this.invuln, 1.5);
+      this.hurtFlash = 0.8; this.shake = 1.3;
+      this.runStats.hits++;
+      Sound.crash();
+      UI.toast('检票员追上来了！7 秒内别再撞');
+      if (Store.data.settings.vibe && navigator.vibrate) navigator.vibrate([30, 40]);
       return;
     }
     Sound.laugh();
@@ -902,6 +970,29 @@ Object.assign(Game, {
       }
     }
     Renderer.drawChar(ch.skin, p.x, p.y, zr, pose, CFG.PLAYER_H);
+    // 护盾泡泡
+    if (this.powers.shield > 0) {
+      const q = Renderer.proj(p.x, p.y + 0.92, zr);
+      if (q) {
+        const c = Renderer.c;
+        const r = CFG.PLAYER_H * 0.78 * q.s;
+        const pulse = 1 + Math.sin(this.time * 6) * 0.04;
+        const g = c.createRadialGradient(q.sx, q.sy, r * 0.55, q.sx, q.sy, r * pulse);
+        g.addColorStop(0, 'rgba(46,230,214,0)');
+        g.addColorStop(0.75, 'rgba(46,230,214,.20)');
+        g.addColorStop(1, 'rgba(120,255,246,.55)');
+        c.fillStyle = g;
+        c.beginPath(); c.arc(q.sx, q.sy, r * pulse, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = 'rgba(180,255,250,.75)'; c.lineWidth = Math.max(1, r * 0.05);
+        c.beginPath(); c.arc(q.sx, q.sy, r * pulse, 0, Math.PI * 2); c.stroke();
+        if (this.powers.shield < 3.2) {   // 快失效时闪烁
+          c.globalAlpha = 0.3 + Math.abs(Math.sin(this.time * 12)) * 0.4;
+          c.strokeStyle = '#fff';
+          c.beginPath(); c.arc(q.sx, q.sy, r * pulse, 0, Math.PI * 2); c.stroke();
+          c.globalAlpha = 1;
+        }
+      }
+    }
   },
 
   drawChaser() {
@@ -917,9 +1008,33 @@ Object.assign(Game, {
     this.state = 'over';
     const save = Store.data;
     const st = this.runStats;
-    const sc = Math.floor(this.score);
+    const D = this.diff || { scoreMul: 1, id: 'normal' };
+    const sc = Math.floor(this.score * (D.scoreMul || 1));
     const isBest = sc > save.best;
     if (isBest) save.best = sc;
+    /* 分地图 / 分难度成绩 */
+    const mapId = (this.mapDef && this.mapDef.id) || 'city';
+    if (!save.bestByMap[mapId]) save.bestByMap[mapId] = { easy: 0, normal: 0, hard: 0 };
+    if (sc > (save.bestByMap[mapId][D.id] || 0)) save.bestByMap[mapId][D.id] = sc;
+    save.playCount[mapId] = (save.playCount[mapId] || 0) + 1;
+    /* 挑战之路 */
+    const justDone = [];
+    if (typeof CHALLENGES !== 'undefined') {
+      const stat = {
+        dist: Math.floor(this.travel), coins: this.runCoins, jumps: st.jumps, rolls: st.rolls,
+        roof: Math.floor(st.roofDist || 0), combo: Math.floor(this.maxMult * 20),
+        near: st.near || 0, nodist: st.hits > 0 ? 0 : Math.floor(this.travel),
+        powers: st.powers || 0,
+      };
+      for (const c of CHALLENGES) {
+        if (save.challenges.indexOf(c.id) >= 0) continue;
+        if ((stat[c.type] || 0) >= c.val) {
+          save.challenges.push(c.id);
+          save.coins += c.reward;
+          justDone.push(c);
+        }
+      }
+    }
     save.coins += this.runCoins;
     save.totalDist += Math.floor(this.travel);
     save.totalCoins += this.runCoins;

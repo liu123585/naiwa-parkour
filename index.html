@@ -46,6 +46,14 @@
   <!-- ============ 主菜单 ============ -->
   <div id="screenMenu" class="screen">
     <div class="menu-bg-deco"></div>
+    <nav class="top-nav">
+      <button class="top-nav-btn" data-open="maps"><i class="ico ico-map"></i><span>世界地图</span></button>
+      <button class="top-nav-btn" data-open="codex"><i class="ico ico-book"></i><span>障碍图鉴</span></button>
+      <button class="top-nav-btn" data-open="path"><i class="ico ico-path"></i><span>挑战之路</span></button>
+      <button class="top-nav-btn" data-open="outfits"><i class="ico ico-shirt"></i><span>服装商城</span></button>
+      <button class="top-nav-btn" data-open="rank"><i class="ico ico-rank"></i><span>排行榜</span></button>
+      <button class="top-nav-btn" data-open="settings"><i class="ico ico-gear"></i><span>设置</span></button>
+    </nav>
     <div class="menu-inner">
       <div class="logo-wrap">
         <div class="logo-sub">魔性奶蛙领衔 · 三跑道狂奔</div>
@@ -64,11 +72,14 @@
         <div class="stat-pill"><i class="ico ico-run"></i><span>总里程</span><b id="menuTotal">0</b><span>m</span></div>
       </div>
 
+      <div class="diff-pick" id="diffPick"></div>
+      <div class="menu-now" id="menuNow"></div>
+
       <div class="menu-btns">
-        <button id="btnPlay" class="btn btn-primary btn-xl">开始跑酷</button>
+        <button id="btnPlay" class="btn btn-primary btn-xl">点击开跑 ▶</button>
         <div class="menu-sub-btns">
-          <button id="btnChars" class="btn">角色商店</button>
-          <button id="btnMissions" class="btn">任务成就</button>
+          <button id="btnChars" class="btn">角色形象</button>
+          <button id="btnMissions" class="btn">任务</button>
           <button id="btnSettings" class="btn">设置</button>
         </div>
       </div>
@@ -76,6 +87,13 @@
       <div class="menu-tip" id="menuTip"></div>
       <div class="menu-foot">操作：← → 变道 · ↑ 跳 · ↓ 滑铲 · 空格 悬浮板 · P 暂停（手机可滑动屏幕或点按钮）</div>
     </div>
+    <nav class="bottom-nav">
+      <button class="bn-btn" data-open="outfits"><i class="ico ico-shirt"></i><span>商城</span></button>
+      <button class="bn-btn" data-open="chars"><i class="ico ico-user"></i><span>形象</span></button>
+      <button class="bn-play" id="btnPlay2"><i class="ico ico-play"></i><span>开跑</span></button>
+      <button class="bn-btn" data-open="missions"><i class="ico ico-task"></i><span>任务</span></button>
+      <button class="bn-btn" data-open="join"><i class="ico ico-mail"></i><span>加入我们</span></button>
+    </nav>
   </div>
 
   <!-- ============ 角色商店 ============ -->
@@ -108,6 +126,83 @@
         <button class="tab" data-tab="ach">成就</button>
       </div>
       <div class="panel-body" id="missionsBody"></div>
+    </div>
+  </div>
+
+  <!-- ============ 世界地图 ============ -->
+  <div id="screenMaps" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>世界巡游</h2>
+        <div class="panel-coins"><i class="ico ico-coin"></i><b id="mapsCoins">0</b></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body" id="mapsBody"></div>
+      <div class="panel-note">越靠后的地图障碍更密、金币更多；已解锁的地图随时免费切换。</div>
+    </div>
+  </div>
+
+  <!-- ============ 障碍图鉴 ============ -->
+  <div id="screenCodex" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>障碍图鉴</h2>
+        <div class="panel-coins"><b id="codexCount">0</b><span class="panel-unit">/18</span></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body" id="codexBody"></div>
+      <div class="panel-note">在跑酷中遇到过的障碍会自动点亮。</div>
+    </div>
+  </div>
+
+  <!-- ============ 挑战之路 ============ -->
+  <div id="screenPath" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>挑战之路</h2>
+        <div class="panel-coins"><i class="ico ico-coin"></i><b id="pathCoins">0</b></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body" id="pathBody"></div>
+      <div class="panel-note">完成挑战直接发放金币奖励，进度保存在本机。</div>
+    </div>
+  </div>
+
+  <!-- ============ 服装商城 ============ -->
+  <div id="screenOutfits" class="screen hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>服装商城</h2>
+        <div class="panel-coins"><i class="ico ico-coin"></i><b id="outfitCoins">0</b></div>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-tabs" id="outfitTabs"></div>
+      <div class="panel-body" id="outfitBody"></div>
+      <div class="panel-note">服装不改变碰撞体积，纯外观；进度保存在当前浏览器。</div>
+    </div>
+  </div>
+
+  <!-- ============ 排行榜 ============ -->
+  <div id="screenRank" class="screen hidden">
+    <div class="panel panel-narrow">
+      <div class="panel-head">
+        <h2>排行榜</h2>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body" id="rankBody"></div>
+      <div class="panel-note">当前为本机记录；联网排行榜需要后端，后续接入。</div>
+    </div>
+  </div>
+
+  <!-- ============ 加入我们 ============ -->
+  <div id="screenJoin" class="screen hidden">
+    <div class="panel panel-narrow">
+      <div class="panel-head">
+        <h2>加入我们</h2>
+        <button class="panel-close" data-close>&times;</button>
+      </div>
+      <div class="panel-body" id="joinBody"></div>
+      <div class="panel-note">反馈与建议欢迎联系我们，后续更新都会在这里发布。</div>
     </div>
   </div>
 
@@ -193,15 +288,19 @@
 
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/world.js"></script>
+<script src="js/artwork.js"></script>
 <script src="js/chars.js"></script>
 <script src="js/draw.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/panels.js"></script>
 <script src="js/game.js"></script>
 <script>
 (function () {
   function boot() {
     try {
       Game.init(document.getElementById('gl'));
+      if (typeof Panels !== 'undefined') Panels.init();
       window.addEventListener('pointerdown', function () { Sound.resume(); }, { once: true });
       document.addEventListener('visibilitychange', function () {
         if (document.hidden && Game.state === 'run') Game.pause();
@@ -217,10 +316,14 @@
 
       // 调试参数：?dev=run 直接开跑，god=1 无敌，theme=night 指定天气，warp=600 快进帧数
       var qp = new URLSearchParams(location.search);
-      if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars')) {
+      if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars') || qp.has('panel') || qp.has('missions')) {
         setTimeout(function () {
           if (qp.has('chars')) { UI.openPanel('chars'); return; }
           if (qp.has('missions')) { UI.openPanel('missions'); return; }
+          if (qp.has('panel')) {
+            const w = qp.get('panel');
+            if (Panels && ['maps', 'codex', 'path', 'outfits', 'rank', 'join'].indexOf(w) >= 0) { Panels.open(w); return; }
+          }
           Game.start();
           if (qp.has('god')) Game.god = true;
           Game.intro = 0.02;

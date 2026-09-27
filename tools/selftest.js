@@ -9,7 +9,7 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['js/config.js', 'js/audio.js', 'js/chars.js', 'js/draw.js', 'js/ui.js', 'js/game.js'];
+const FILES = ['js/config.js', 'js/world.js', 'js/audio.js', 'js/artwork.js', 'js/chars.js', 'js/draw.js', 'js/ui.js', 'js/panels.js', 'js/game.js'];
 
 /* ---------------- mock 2D 上下文 ---------------- */
 let ops = 0;

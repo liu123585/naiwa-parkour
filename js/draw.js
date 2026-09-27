@@ -120,6 +120,7 @@ const Renderer = {
       magnet: { col: '#ff5b5b', col2: '#ff9c9c' }, jet: { col: '#4f9dff', col2: '#a9d1ff' },
       x2: { col: '#ffd34d', col2: '#fff3c0', txt: 'x2' }, shoe: { col: '#ff8b2b', col2: '#ffc389' },
       board: { col: '#ff4fb0', col2: '#ffb1dd' },
+      shield: { col: '#17c9c0', col2: '#a6f6f0' },
     };
     for (const k in powers) {
       const p = powers[k];
@@ -152,6 +153,23 @@ const Renderer = {
           c.fillStyle = '#20232a'; c.save(); c.rotate(-0.28);
           c.beginPath(); c.ellipse(0, 0, 26, 9, 0, 0, Math.PI * 2); c.fill(); c.restore();
           c.fillStyle = '#fff'; c.fillRect(-18, -4, 6, 8); c.fillRect(-6, -4, 6, 8); c.fillRect(6, -4, 6, 8);
+        } else if (k === 'shield') {
+          c.fillStyle = '#0e5c66';
+          c.beginPath();
+          c.moveTo(0, -26); c.quadraticCurveTo(20, -20, 22, 0);
+          c.quadraticCurveTo(22, 20, 0, 28);
+          c.quadraticCurveTo(-22, 20, -22, 0);
+          c.quadraticCurveTo(-20, -20, 0, -26);
+          c.closePath(); c.fill();
+          c.fillStyle = '#7ff2ea';
+          c.beginPath();
+          c.moveTo(0, -19); c.quadraticCurveTo(13, -14, 14.5, 0);
+          c.quadraticCurveTo(14.5, 13, 0, 20);
+          c.quadraticCurveTo(-14.5, 13, -14.5, 0);
+          c.quadraticCurveTo(-13, -14, 0, -19);
+          c.closePath(); c.fill();
+          c.fillStyle = '#0e5c66';
+          c.fillRect(-3, -11, 6, 20); c.fillRect(-9, -4, 18, 6);
         } else {
           c.font = 'bold 38px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
           c.fillStyle = '#5a3d00'; c.fillText('x2', 0, 2);
@@ -346,6 +364,135 @@ const Renderer = {
       }
     }
     this.drawCatenary(theme, travel);
+    this.drawMapProps(theme, travel);
+  },
+
+  /* ---------------- 地图专属路边装饰（各地图辨识度） ---------------- */
+  drawMapProps(theme, travel) {
+    let map = null;
+    try {
+      if (typeof World !== 'undefined' && typeof Store !== 'undefined' && Store.data) map = World.map(Store.data.map);
+    } catch (e) { map = null; }
+    if (!map || !map.prop) return;
+    const c = this.c;
+    const gap = 24;
+    for (let i = Math.floor(CFG.FAR / gap); i >= 0; i--) {
+      const z = i * gap - (travel % gap);
+      if (z < 9 || z > CFG.FAR * 0.72) continue;
+      for (const sgn of [-1, 1]) {
+        const bx = sgn * (CFG.WALL_X - 0.25);
+        const b = this.proj(bx, 0, z);
+        if (!b) continue;
+        const s = b.s, u = s;                     // 1 世界单位 = s 像素
+        const seed = Math.floor((travel - travel % gap) / gap) + i;
+        c.save();
+        c.translate(b.sx, b.sy);
+        switch (map.prop) {
+          case 'lantern': {                        // 长安：红灯笼
+            c.fillStyle = '#6b4a2f';
+            c.fillRect(-0.05 * u, -3.2 * u, 0.1 * u, 3.2 * u);
+            const ly = -2.9 * u, r = 0.42 * u;
+            const gl = c.createRadialGradient(0, ly, r * 0.2, 0, ly, r * 2.1);
+            gl.addColorStop(0, 'rgba(255,120,80,.5)'); gl.addColorStop(1, 'rgba(255,120,80,0)');
+            c.fillStyle = gl; c.beginPath(); c.arc(0, ly, r * 2.1, 0, 6.283); c.fill();
+            c.fillStyle = '#e03a2f';
+            c.beginPath(); c.ellipse(0, ly, r, r * 1.15, 0, 0, 6.283); c.fill();
+            c.fillStyle = '#f5c451';
+            c.fillRect(-r * 0.5, ly - r * 1.35, r, r * 0.28);
+            c.fillRect(-r * 0.5, ly + r * 1.1, r, r * 0.26);
+            c.strokeStyle = '#f5c451'; c.lineWidth = Math.max(1, 0.04 * u);
+            c.beginPath(); c.moveTo(-r * 0.6, ly); c.lineTo(r * 0.6, ly); c.stroke();
+            break;
+          }
+          case 'sakura': {                         // 樱花树
+            c.fillStyle = '#6b4a3a';
+            c.fillRect(-0.09 * u, -1.5 * u, 0.18 * u, 1.5 * u);
+            c.fillStyle = '#f4b8d0';
+            [[-0.25, -1.75, 0.55], [0.28, -1.9, 0.5], [0, -2.25, 0.62], [-0.55, -1.5, 0.36], [0.55, -1.55, 0.34]].forEach(p => {
+              c.beginPath(); c.arc(p[0] * u, p[1] * u, p[2] * u, 0, 6.283); c.fill();
+            });
+            c.fillStyle = 'rgba(255,255,255,.4)';
+            c.beginPath(); c.arc(-0.2 * u, -2.3 * u, 0.35 * u, 0, 6.283); c.fill();
+            break;
+          }
+          case 'palm': {                           // 棕榈
+            c.strokeStyle = '#8a6a45'; c.lineWidth = Math.max(2, 0.1 * u); c.lineCap = 'round';
+            c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(0.25 * u, -1.6 * u, 0.1 * u, -2.9 * u); c.stroke();
+            c.strokeStyle = '#3f9d5a'; c.lineWidth = Math.max(2, 0.11 * u);
+            for (let k = -2; k <= 2; k++) {
+              c.beginPath();
+              c.moveTo(0.1 * u, -2.9 * u);
+              c.quadraticCurveTo((0.55 + Math.abs(k) * 0.1) * k * u * 0.5, (-3.3 - Math.abs(k) * 0.1) * u, 0.95 * k * u, (-2.75 + Math.abs(k) * 0.12) * u);
+              c.stroke();
+            }
+            c.fillStyle = '#c98f3a';
+            c.beginPath(); c.arc(0.1 * u, -2.8 * u, 0.16 * u, 0, 6.283); c.fill();
+            break;
+          }
+          case 'obelisk': {                        // 埃及方尖碑
+            c.fillStyle = '#c8a463';
+            c.beginPath();
+            c.moveTo(-0.42 * u, 0); c.lineTo(-0.24 * u, -3.6 * u);
+            c.lineTo(0, -4.25 * u); c.lineTo(0.24 * u, -3.6 * u); c.lineTo(0.42 * u, 0);
+            c.closePath(); c.fill();
+            c.fillStyle = 'rgba(0,0,0,.14)';
+            c.beginPath(); c.moveTo(0, -4.25 * u); c.lineTo(0.24 * u, -3.6 * u); c.lineTo(0.42 * u, 0); c.lineTo(0, 0); c.closePath(); c.fill();
+            c.fillStyle = '#e7c98f';
+            for (let k = 1; k < 6; k++) c.fillRect(-0.16 * u, -0.6 * k * u, 0.32 * u, 0.06 * u);
+            break;
+          }
+          case 'dome': {                           // 印度穹顶塔
+            c.fillStyle = '#e0919f';
+            c.fillRect(-0.38 * u, -1.9 * u, 0.76 * u, 1.9 * u);
+            c.beginPath(); c.arc(0, -1.9 * u, 0.42 * u, Math.PI, 0); c.fill();
+            c.fillStyle = '#f2b6c0';
+            c.fillRect(-0.3 * u, -1.55 * u, 0.6 * u, 0.22 * u);
+            c.fillRect(-0.3 * u, -0.95 * u, 0.6 * u, 0.22 * u);
+            c.fillStyle = '#d9a03f';
+            c.beginPath(); c.arc(0, -2.36 * u, 0.1 * u, 0, 6.283); c.fill();
+            break;
+          }
+          case 'flagpole': {                       // 高原经幡
+            c.fillStyle = '#7a6a5a';
+            c.fillRect(-0.05 * u, -3.0 * u, 0.1 * u, 3.0 * u);
+            const cols = ['#e6423c', '#f5c451', '#4bb8ff', '#7cd44a', '#a06bff'];
+            for (let k = 0; k < 5; k++) {
+              c.fillStyle = cols[(k + seed) % 5];
+              const fy = (-2.7 + k * 0.42) * u;
+              c.beginPath();
+              c.moveTo(0.05 * u, fy);
+              c.lineTo((0.6 + (k % 2) * 0.15) * u, fy + 0.06 * u);
+              c.lineTo((0.6 + (k % 2) * 0.15) * u, fy + 0.3 * u);
+              c.lineTo(0.05 * u, fy + 0.26 * u);
+              c.closePath(); c.fill();
+            }
+            break;
+          }
+          case 'neon': {                           // 赛博霓虹招牌
+            const cols = ['#2ee6d6', '#ff3ec8'];
+            c.strokeStyle = cols[seed % 2];
+            c.lineWidth = Math.max(1.5, 0.07 * u);
+            c.globalAlpha = 0.9;
+            for (const sz of [1.35, 1.85]) {
+              c.beginPath(); c.arc(0, -sz * u, 0.42 * u, 0, 6.283); c.stroke();
+            }
+            c.globalAlpha = 0.75;
+            c.beginPath(); c.moveTo(0, -1.0 * u); c.lineTo(0, 0); c.stroke();
+            c.globalAlpha = 1;
+            break;
+          }
+          default: {                               // 城市灯柱 / 信号杆
+            c.fillStyle = theme.wallDark;
+            c.fillRect(-0.07 * u, -3.4 * u, 0.14 * u, 3.4 * u);
+            c.fillStyle = theme.lamp;
+            c.globalAlpha = 0.9;
+            c.beginPath(); c.arc(0, -3.5 * u, 0.16 * u, 0, 6.283); c.fill();
+            c.globalAlpha = 1;
+          }
+        }
+        c.restore();
+      }
+    }
   },
 
   /* ---------------- 接触网（架空电线 + 支架），增强「地铁/铁道」感 ---------------- */
@@ -605,7 +752,18 @@ const Renderer = {
     c.save();
     c.translate(p.sx, p.sy);
     c.scale(hp, -hp);
-    CharArtAPI.draw(c, skin, pose);
+    // 服装染色（纯外观，不改变碰撞体积）
+    let outfit = null;
+    try {
+      if (typeof World !== 'undefined' && Store && Store.data) {
+        outfit = World.outfit(skin);
+        if (outfit && outfit.filter && outfit.filter !== 'none') c.filter = outfit.filter;
+      }
+    } catch (e) { outfit = null; }
+    // 有 AI 素材就用 AI 素材（含跑步帧动画），否则回退到矢量建模
+    const useArt = (typeof ART !== 'undefined') && ART.has(skin) && ARTDRAW.pose(c, ART.runFrames(skin), pose);
+    if (!useArt) CharArtAPI.draw(c, skin, pose);
+    if (outfit) c.filter = 'none';
     c.restore();
     if (opts && opts.after) opts.after(c, p, hp);
   },
