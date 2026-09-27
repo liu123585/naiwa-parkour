@@ -276,11 +276,8 @@ const UI = {
     if (this.el.menu.classList.contains('hidden')) return;
     // 首次进菜单时后台预热 AI 素材
     if (!this._artWarm) {
+      // 封面与商店已改用场上同款真 3D 模型渲染，无需再下载几十 MB 的 AI 立绘
       this._artWarm = true;
-      if (typeof ART !== 'undefined') {
-        ART.ensure(Store.data.char);
-        ART.preloadAll(CHARS.map(c => c.skin).concat(['inspector', 'dog', 'bull']));
-      }
     }
     const ch = CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa;
     const cv = this.el.hero;
