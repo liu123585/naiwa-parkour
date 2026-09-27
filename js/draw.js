@@ -73,6 +73,7 @@ const Renderer = {
     this.canvas = canvas;
     this.c = canvas.getContext('2d', { alpha: false });
     this.buildSprites();
+    this.loadTex();
     this.resize();
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 250));
@@ -98,6 +99,43 @@ const Renderer = {
   },
 
   /* ---------------- 预渲染精灵（金币/道具） ---------------- */
+  /* ---------------- 场景贴图：AI 涂鸦墙 + 程序化道砟 ---------------- */
+  loadTex() {
+    this.tex = this.tex || {};
+    if (!this.tex.graffiti && typeof Image !== 'undefined') {
+      const im = new Image();
+      im.onload = () => { this.tex.graffiti = im; };
+      im.onerror = () => { this.tex.graffiti = null; };
+      im.src = 'art/tex-graffiti.png';
+    }
+    if (!this.tex.gravel && typeof document !== 'undefined') {
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 256;
+      const x = cv.getContext('2d');
+      x.fillStyle = '#8b8781'; x.fillRect(0, 0, 256, 256);
+      const dot = (px, py, r, col) => {
+        x.fillStyle = col;
+        for (const ox of [-256, 0, 256]) {
+          for (const oy of [-256, 0, 256]) {
+            x.beginPath(); x.arc(px + ox, py + oy, r, 0, 6.283); x.fill();
+          }
+        }
+      };
+      for (let i = 0; i < 2200; i++) {
+        const g = 70 + Math.random() * 120;
+        dot(Math.random() * 256, Math.random() * 256, 0.8 + Math.random() * 2.4,
+          'rgba(' + (g | 0) + ',' + ((g * 0.96) | 0) + ',' + ((g * 0.86) | 0) + ',' + (0.25 + Math.random() * 0.6).toFixed(2) + ')');
+      }
+      for (let i = 0; i < 12; i++) {
+        x.fillStyle = 'rgba(28,26,24,.20)';
+        x.beginPath();
+        x.ellipse(Math.random() * 256, Math.random() * 256, 10 + Math.random() * 26, 6 + Math.random() * 14, Math.random() * 3, 0, 6.283);
+        x.fill();
+      }
+      this.tex.gravel = cv;
+    }
+  },
+
   buildSprites() {
     const mk = (size, fn) => {
       const cv = document.createElement('canvas');
@@ -270,6 +308,8 @@ const Renderer = {
     g.addColorStop(0, theme.ballast2); g.addColorStop(0.35, theme.ballast); g.addColorStop(1, theme.ballast2);
     c.fillStyle = g;
     c.fillRect(0, this.horizon - 1, W, H - this.horizon + 1);
+    // 道砟纹理
+    if (this.tex && this.tex.gravel && !this.fxLow) this.texGroundStrip(theme, travel);
 
     // 枕木
     const gap = CFG.SLEEPER_GAP, off = travel % gap;
@@ -318,10 +358,15 @@ const Renderer = {
         c.fillStyle = wg;
         c.beginPath(); c.moveTo(b1.sx, b1.sy); c.lineTo(t1.sx, t1.sy); c.lineTo(t2.sx, t2.sy); c.lineTo(b2.sx, b2.sy);
         c.closePath(); c.fill();
+        // AI 涂鸦贴图：把整面墙按 z 分段做仿射映射（透视靠分段逼近）
+        if (this.tex && this.tex.graffiti && !this.fxLow) {
+          this.texWallStrip(theme, sgn, travel, wallH);
+        }
       }
       // 墙面彩色涂鸦板 + 立柱
       const pgap = 9;
-      for (let i = Math.floor(CFG.FAR / pgap); i >= 0; i--) {
+      const haveTex = !!(this.tex && this.tex.graffiti && !this.fxLow);   // 有 AI 涂鸦贴图时不再叠程序化涂鸦板
+      for (let i = Math.floor(CFG.FAR / pgap); i >= 0 && !haveTex; i--) {
         const z = i * pgap - (travel % pgap);
         if (z < 9 || z > CFG.FAR * 0.8) continue;   // 贴脸的面板会被放大成巨块，直接跳过
         const seed = Math.floor((travel - travel % pgap) / pgap) + i;
@@ -365,6 +410,85 @@ const Renderer = {
     }
     this.drawCatenary(theme, travel);
     this.drawMapProps(theme, travel);
+  },
+
+  /* ---------------- 贴图工具：把纹理映射到「梯形墙面/地面」上 ----------------
+     A = 近·下, B = 近·上, D = 远·下（远·上由三者仿射推出）
+     纹理坐标 u 沿长度方向、v 沿高度方向
+  ------------------------------------------------------------------ */
+  texStrip(img, u0, u1, Ax, Ay, Bx, By, Dx, Dy, alpha) {
+    const c = this.c;
+    const W = img.width || 0, H = img.height || 0;
+    if (!W || !H) return;
+    const du = (u1 - u0) * W;
+    if (!isFinite(du) || du <= 0.5) return;
+    c.save();
+    if (alpha != null) c.globalAlpha = alpha;
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.transform((Dx - Ax) / W, (Dy - Ay) / W, -(Bx - Ax) / H, -(By - Ay) / H, Bx, By);
+    c.drawImage(img, u0 * W, 0, du, H, u0 * W, 0, du, H);
+    c.restore();
+  },
+
+  /* 一侧墙面的涂鸦贴图（分段仿射） */
+  texWallStrip(theme, sgn, travel, wallH) {
+    const img = this.tex.graffiti;
+    const x = sgn * CFG.WALL_X;
+    const SEG = 12, TILE = 7.5;             // 分段数 / 一个贴图循环对应多少世界单位
+    const zs = [];
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG;
+      zs.push(2.0 + Math.pow(t, 1.9) * (CFG.FAR * 0.62));   // 近处密、远处疏
+    }
+    for (let i = 0; i < SEG; i++) {
+      const fade = 1 - i / SEG * 0.55;
+      this.texWallRange(img, x, zs[i], zs[i + 1], wallH, ((travel + zs[i]) / TILE) % 1, 0.85 * fade, TILE);
+    }
+  },
+
+  /* 把一段 z 区间按贴图循环切成若干片，逐片回调（保证无缝） */
+  texRun(zn, zf, uPhase, TILE, cb) {
+    let zA = zn, uA = uPhase, guard = 0;
+    const du = (zf - zn) / TILE;
+    const n = Math.max(1, Math.ceil(uA + du));
+    for (let k = 0; k < n && guard++ < 80; k++) {
+      const zEnd = (uA + (zf - zA) / TILE <= 1) ? zf : zA + (1 - uA) * TILE;
+      const uEnd = uA + (zEnd - zA) / TILE;
+      if (zEnd - zA > 0.01 && uEnd > uA + 0.001) cb(zA, zEnd, uA, Math.min(1, uEnd));
+      if (zEnd >= zf - 1e-6) break;
+      zA = zEnd; uA = 0;
+    }
+  },
+
+  /* 一段墙面涂鸦贴图 */
+  texWallRange(img, x, zn, zf, wallH, uPhase, alpha, TILE) {
+    this.texRun(zn, zf, uPhase, TILE, (z0, z1, u0, u1) => {
+      const A = this.proj(x, 0.02, z0), B = this.proj(x, wallH, z0), D = this.proj(x, 0.02, z1);
+      if (!A || !B || !D) return;
+      this.texStrip(img, u0, u1, A.sx, A.sy, B.sx, B.sy, D.sx, D.sy, alpha);
+    });
+  },
+
+  /* 地面道砟贴图（分段仿射） */
+  texGroundStrip(theme, travel) {
+    const img = this.tex.gravel;
+    if (!img) return;
+    const SEG = 10, TILE = 9;
+    const zs = [];
+    for (let i = 0; i <= SEG; i++) zs.push(1.6 + Math.pow(i / SEG, 2.1) * (CFG.FAR * 0.5));
+    for (let i = 0; i < SEG; i++) {
+      const zn = zs[i], zf = zs[i + 1];
+      const A = this.proj(-CFG.ROAD_HALF, 0, zn), B = this.proj(CFG.ROAD_HALF, 0, zn);
+      const D = this.proj(-CFG.ROAD_HALF, 0, zf), E = this.proj(CFG.ROAD_HALF, 0, zf);
+      if (!A || !B || !D || !E) continue;
+      const alpha = 0.5 * (1 - i / SEG * 0.6);
+      this.texRun(zn, zf, ((travel + zn) / TILE) % 1, TILE, (z0, z1, u0, u1) => {
+        const a = this.proj(-CFG.ROAD_HALF, 0, z0), b = this.proj(CFG.ROAD_HALF, 0, z0);
+        const d2 = this.proj(-CFG.ROAD_HALF, 0, z1), e2 = this.proj(CFG.ROAD_HALF, 0, z1);
+        if (!a || !b || !d2 || !e2) return;
+        this.texStrip(img, u0, u1, a.sx, a.sy, d2.sx, d2.sy, b.sx, b.sy, alpha);
+      });
+    }
   },
 
   /* ---------------- 地图专属路边装饰（各地图辨识度） ---------------- */

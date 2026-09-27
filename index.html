@@ -316,7 +316,8 @@
 
       // 调试参数：?dev=run 直接开跑，god=1 无敌，theme=night 指定天气，warp=600 快进帧数
       var qp = new URLSearchParams(location.search);
-      if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars') || qp.has('panel') || qp.has('missions')) {
+      if (qp.get('delay')) { window.__devDelay = parseInt(qp.get('delay'), 10) || 900; }
+      if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars') || qp.has('panel') || qp.has('missions') || qp.has('skin')) {
         setTimeout(function () {
           if (qp.has('chars')) { UI.openPanel('chars'); return; }
           if (qp.has('missions')) { UI.openPanel('missions'); return; }
@@ -327,6 +328,10 @@
           Game.start();
           if (qp.has('god')) Game.god = true;
           Game.intro = 0.02;
+          if (qp.get('skin')) {
+            var sk = qp.get('skin');
+            if (CHAR_MAP[sk]) { Store.data.char = sk; Store.save(); ART.ensure(sk); }
+          }
           if (qp.has('theme')) {
             var th = THEMES[qp.get('theme')] || THEMES.day;
             Game.theme = Game.themeFrom = Game.themeTo = th;
@@ -360,7 +365,7 @@
             Game.devFreeze = true;      // 冻结世界，截图时不会再跑进车厢
             Game.render();
           }
-        }, 900);
+        }, window.__devDelay || 900);
       }
     } catch (err) {
       var b = document.getElementById('boot');

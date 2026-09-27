@@ -286,6 +286,7 @@ const Panels = {
     const tabs = this.el.outfitTabs, box = this.el.outfitBody;
     if (!tabs || !box) return;
     this.el.outfitCoins.textContent = Store.data.coins;
+    if (typeof ART !== 'undefined') { ART.ensure(this.outfitSkin); ART.ensure(Store.data.char); }
     tabs.innerHTML = '';
     CHARS.forEach(ch => {
       const b = document.createElement('button');
@@ -352,7 +353,38 @@ const Panels = {
     box.appendChild(note);
   },
 
-  /* ---------------- 排行榜（本机） ---------------- */
+  /* ---------------- 云端排行榜接口 ---------------- */
+  cloud: {
+    base: '/api/rank',
+    ok: null,                     // null=未知 true=可用 false=不可用
+    submit(entry) {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 6000) : null;
+      return fetch(this.base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+        signal: ctl ? ctl.signal : undefined,
+      }).then(r => r.json()).then(d => {
+        if (timer) clearTimeout(timer);
+        this.ok = !!(d && d.ok);
+        return d;
+      }).catch(() => { if (timer) clearTimeout(timer); this.ok = false; return null; });
+    },
+    list(map, diff) {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 6000) : null;
+      const q = '?map=' + encodeURIComponent(map || '') + '&diff=' + encodeURIComponent(diff || '') + '&limit=20';
+      return fetch(this.base + q, { signal: ctl ? ctl.signal : undefined })
+        .then(r => r.json())
+        .then(d => { if (timer) clearTimeout(timer); this.ok = !!(d && d.ok); return d; })
+        .catch(() => { if (timer) clearTimeout(timer); this.ok = false; return null; });
+    },
+  },
+
+  /* ---------------- 排行榜（云端 + 本机） ---------------- */
   buildRank() {
     const box = this.el.rankBody;
     if (!box) return;
@@ -377,6 +409,36 @@ const Panels = {
     });
     nameRow.appendChild(nb);
     box.appendChild(nameRow);
+
+    /* 云端榜（普通难度） */
+    const cloudBox = document.createElement('div');
+    cloudBox.className = 'rank-cloud';
+    cloudBox.innerHTML = '<div class="codex-desc">云端排行榜（普通难度 · 需要后端 KV 绑定）加载中…</div>';
+    box.appendChild(cloudBox);
+    this.cloud.list(Store.data.map, 'normal').then(d => {
+      cloudBox.innerHTML = '';
+      if (!d || !d.ok) {
+        cloudBox.innerHTML = '<div class="codex-desc">云端未开通：当前只显示本机记录。' +
+          '（在 EdgeOne 控制台给项目绑定 KV 命名空间到变量名 <b>KV</b> 即可开启）</div>';
+        return;
+      }
+      if (!d.list || !d.list.length) {
+        cloudBox.innerHTML = '<div class="codex-desc">云端还没有这条地图的成绩，来抢第一！</div>';
+        return;
+      }
+      const title = document.createElement('div');
+      title.className = 'rank-title';
+      title.textContent = '云端榜 · ' + World.map(Store.data.map).name + ' · 普通难度';
+      cloudBox.appendChild(title);
+      d.list.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'rank-row' + (i === 0 ? ' top1' : '');
+        row.innerHTML = '<span class="rk">' + (i + 1) + '</span><span>' + String(r.name || '奶蛙玩家') +
+          '<span style="opacity:.6"> · ' + Math.floor(r.dist || 0) + 'm</span></span><b>' + r.score + '</b>';
+        cloudBox.appendChild(row);
+      });
+    });
+
     if (!rows.length) {
       const empty = document.createElement('div');
       empty.className = 'codex-desc';

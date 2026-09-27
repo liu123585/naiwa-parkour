@@ -1046,6 +1046,18 @@ Object.assign(Game, {
     if (save.runs_log.length > 6) save.runs_log.length = 6;
     const newly = Achievements.check(save);
     Store.save();
+    /* 云端排行榜：仅普通难度计入（高仿设计：简单/困难只存本机） */
+    if (D.id === 'normal' && sc > 0 && typeof Panels !== 'undefined' && Panels.cloud) {
+      if (!save.playerName) {
+        save.playerName = '奶蛙玩家' + Math.floor(1000 + Math.random() * 9000);
+        Store.save();
+      }
+      Panels.cloud.submit({
+        name: save.playerName, score: sc, dist: Math.floor(this.travel), map: mapId, diff: D.id,
+      }).then(r => {
+        if (r && r.ok && r.rank) UI.toast('云端排名第 ' + r.rank + ' 名（' + save.playerName + '）');
+      });
+    }
     UI.showOver({
       score: sc, coins: this.runCoins, dist: Math.floor(this.travel),
       best: save.best, isBest: isBest, mult: this.maxMult,

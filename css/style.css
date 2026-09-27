@@ -337,3 +337,5 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
 .join-card span{font-size:11.5px;color:#7b828c}
 .join-copy{margin-left:auto;padding:8px 13px;border-radius:11px;border:none;background:#ffd34d;color:#5a3d00;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 0 #d9a300}
 .panel-unit{font-size:12px;color:#8a9099;font-weight:800}
+.rank-cloud{display:flex;flex-direction:column;gap:8px}
+.rank-title{font-size:12.5px;font-weight:900;color:#3f4a58;margin-top:4px}

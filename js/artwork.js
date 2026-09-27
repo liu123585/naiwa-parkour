@@ -7,9 +7,25 @@
 
 const ART = {
   BASE: 'art/',
-  /* 每个角色：p = 立绘，r = 跑步精灵图 */
+  /* 每个角色：p = 立绘，r = 跑步精灵图（AI 生成后抠图切片） */
   manifest: {
     naiwa: { p: 'naiwa-portrait.png', r: 'naiwa-run.png' },
+    nailong: { p: 'nailong-portrait.png', r: 'nailong-run.png' },
+    yujie: { p: 'yujie-portrait.png', r: 'yujie-run.png' },
+    xiaoyang: { p: 'xiaoyang-portrait.png', r: 'xiaoyang-run.png' },
+    zhangtongxue: { p: 'zhangtongxue-portrait.png', r: 'zhangtongxue-run.png' },
+    liziqi: { p: 'liziqi-portrait.png', r: 'liziqi-run.png' },
+    liugenhong: { p: 'liugenhong-portrait.png', r: 'liugenhong-run.png' },
+    donglaoshi: { p: 'donglaoshi-portrait.png', r: 'donglaoshi-run.png' },
+    goose: { p: 'goose-portrait.png', r: 'goose-run.png' },
+    cybernaiwa: { p: 'cybernaiwa-portrait.png', r: 'cybernaiwa-run.png' },
+    inspector: { p: 'inspector-portrait.png', r: 'inspector-run.png' },
+    dog: { p: 'dog-portrait.png', r: 'dog-run.png' },
+  },
+  /* 场景贴图 */
+  textures: {
+    graffiti: 'tex-graffiti.png',
+    ground: 'tex-ground.png',
   },
   cache: {},
   loading: {},
@@ -28,33 +44,42 @@ const ART = {
     return imgData;
   },
 
-  /* 从整图里切出所有独立角色（按列分组） */
+  /* 从整图里切出所有独立角色：
+     先统计每列的“非背景像素数”，再用占用曲线的谷值切分
+     （角色之间挨着也能切开，这是精灵图分帧的关键） */
   slice(imgData, W, H) {
     const d = imgData.data;
     const colHit = new Int32Array(W);
+    let maxHit = 0;
     for (let x = 0; x < W; x++) {
       let n = 0;
       for (let y = 0; y < H; y++) if (d[(y * W + x) * 4 + 3] > 40) n++;
       colHit[x] = n;
+      if (n > maxHit) maxHit = n;
     }
-    const groups = [];
-    let cur = null;
+    if (!maxHit) return [];
+    // 谷值切分：占用低于阈值视为“两帧之间的空隙”
+    const thresh = Math.max(2, maxHit * 0.30);
+    const cuts = [];
+    let inValley = false, vStart = 0;
     for (let x = 0; x < W; x++) {
-      if (colHit[x] >= 4) {
-        if (!cur) cur = { x0: x, x1: x };
-        else cur.x1 = x;
-        cur.gap = 0;
-      } else if (cur) {
-        cur.gap++;
-        if (cur.gap > 14) { groups.push(cur); cur = null; }
-      }
+      const low = colHit[x] < thresh;
+      if (low && !inValley) { inValley = true; vStart = x; }
+      else if (!low && inValley) { inValley = false; cuts.push(Math.round((vStart + x) / 2)); }
     }
-    if (cur) groups.push(cur);
+    const bounds = [0].concat(cuts.filter(c => c > 0 && c < W)).concat([W]);
+    // 合并过窄的段
+    const segs = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const a = bounds[i], b = bounds[i + 1];
+      if (b - a < 8) { if (segs.length) segs[segs.length - 1].x1 = b; continue; }
+      segs.push({ x0: a, x1: b });
+    }
 
     const frames = [];
-    const minW = W * 0.035, minH = H * 0.16;
-    for (const g of groups) {
-      const x0 = g.x0, x1 = g.x1;
+    const minW = W * 0.035, minH = H * 0.14;
+    for (const g of segs) {
+      const x0 = Math.max(0, g.x0), x1 = Math.min(W - 1, g.x1);
       if (x1 - x0 < minW) continue;
       let y0 = H, y1 = -1, px = 0;
       for (let x = x0; x <= x1; x++) {
@@ -62,8 +87,9 @@ const ART = {
           if (d[(y * W + x) * 4 + 3] > 40) { if (y < y0) y0 = y; if (y > y1) y1 = y; px++; }
         }
       }
+      if (y1 < y0) continue;
       const w = x1 - x0 + 1, h = y1 - y0 + 1;
-      if (h < minH || px < W * H * 0.004) continue;
+      if (h < minH || px < W * H * 0.003) continue;
       // 排除右下角的水印
       if (x1 > W * 0.82 && y0 > H * 0.86) continue;
       const fc = document.createElement('canvas');
@@ -77,7 +103,33 @@ const ART = {
       fx.putImageData(sub, 0, 0);
       frames.push(fc);
     }
-    return frames;
+    return frames.length ? frames : [this.cropWhole(imgData, W, H)];
+  },
+
+  /* 兜底：切不出来时用整张图裁掉透明边 */
+  cropWhole(imgData, W, H) {
+    const d = imgData.data;
+    let x0 = W, x1 = -1, y0 = H, y1 = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (d[(y * W + x) * 4 + 3] > 40) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 < 0) { x0 = 0; x1 = W - 1; y0 = 0; y1 = H - 1; }
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const fc = document.createElement('canvas');
+    fc.width = w; fc.height = h;
+    const fx = fc.getContext('2d');
+    const sub = fx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const src = ((y0 + y) * W + x0) * 4;
+      sub.data.set(d.subarray(src, src + w * 4), y * w * 4);
+    }
+    fx.putImageData(sub, 0, 0);
+    return fc;
   },
 
   process(img) {

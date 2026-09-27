@@ -255,7 +255,7 @@ const UI = {
       this._artWarm = true;
       if (typeof ART !== 'undefined') {
         ART.ensure(Store.data.char);
-        ART.preloadAll(CHARS.map(c => c.skin));
+        ART.preloadAll(CHARS.map(c => c.skin).concat(['inspector', 'dog']));
       }
     }
     const ch = CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa;
