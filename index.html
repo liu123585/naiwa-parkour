@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<canvas id="gl3d"></canvas>
 <canvas id="gl"></canvas>
 
 <div id="ui" class="ui">
@@ -288,10 +289,12 @@
 
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/gl3d.js"></script>
 <script src="js/world.js"></script>
 <script src="js/artwork.js"></script>
 <script src="js/chars.js"></script>
 <script src="js/draw.js"></script>
+<script src="js/render3d.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/game.js"></script>
@@ -300,6 +303,13 @@
   function boot() {
     try {
       Game.init(document.getElementById('gl'));
+      // 启用 3D 渲染（失败则自动回退到 2D）
+      var glCanvas = document.getElementById('gl3d');
+      if (glCanvas && typeof Render3D !== 'undefined' && Render3D.init(glCanvas)) {
+        Object.assign(Renderer, Render3D.api);
+        Renderer.use3D = true;
+        document.getElementById('gl').classList.add('overlay2d');
+      }
       if (typeof Panels !== 'undefined') Panels.init();
       window.addEventListener('pointerdown', function () { Sound.resume(); }, { once: true });
       document.addEventListener('visibilitychange', function () {

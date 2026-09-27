@@ -71,7 +71,8 @@ const Renderer = {
 
   init(canvas) {
     this.canvas = canvas;
-    this.c = canvas.getContext('2d', { alpha: false });
+    // alpha:true —— 3D 模式下这张画布只做上层特效，必须透明
+    this.c = canvas.getContext('2d', { alpha: true });
     this.buildSprites();
     this.loadTex();
     this.resize();
