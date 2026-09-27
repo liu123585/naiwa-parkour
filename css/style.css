@@ -290,7 +290,8 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
 .bn-btn{display:flex;flex-direction:column;align-items:center;gap:3px;border:none;background:none;color:#5b6068;font-size:11px;font-weight:800;cursor:pointer;padding:4px 6px}
 .bn-play{display:flex;flex-direction:column;align-items:center;gap:2px;border:none;cursor:pointer;background:linear-gradient(180deg,#ffd96b,#f5a623);color:#5a3d00;font-size:12px;font-weight:900;padding:9px 20px;border-radius:20px;box-shadow:0 5px 0 #c97f00;transform:translateY(-10px)}
 .bn-play:active{transform:translateY(-6px);box-shadow:0 2px 0 #c97f00}
-.menu-inner{padding-bottom:96px;padding-top:56px}
+.menu-inner{padding-bottom:118px;padding-top:56px}
+.bottom-nav .bn-btn,.bottom-nav .bn-play{position:relative;z-index:2}
 .ico-map,.ico-book,.ico-path,.ico-shirt,.ico-rank,.ico-gear,.ico-user,.ico-task,.ico-mail{width:15px;height:15px;border-radius:4px;background:currentColor;opacity:.8}
 .ico-gear{border-radius:50%}
 .ico-play{width:0;height:0;border-radius:0;background:none;border-left:11px solid currentColor;border-top:7px solid transparent;border-bottom:7px solid transparent}
