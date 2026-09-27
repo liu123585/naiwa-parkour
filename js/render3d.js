@@ -161,10 +161,10 @@ const Render3D = {
       const T = Render3D.themeRgb(th);
       Render3D.th = T;
       // 相机在角色后方 CAM_BACK 处；角色世界 z = travel（前方为 -Z）
-      const camZ = travel + CFG.CAM_BACK;
+      const camZ = travel - CFG.CAM_BACK;
       const cam = [Render3D.camX, Render3D.camY, camZ];
-      // 俯视前方赛道（地铁跑酷视角）：看得远、角色落在画面下半部
-      const target = [Render3D.camX * 0.5, 0.35, camZ - 18];
+      // 看向【前方】赛道（地铁跑酷视角）：target 在玩家前方，障碍才会从画面远处由远及近地逼近
+      const target = [Render3D.camX * 0.5, 0.55, camZ + 18];
       const dtReal = Math.max(0.001, Math.min(0.2, (time || 0) - (Render3D._lastT || time || 0)));
       Render3D._lastT = time || 0;
       Render3D.tickPerf(dtReal);
@@ -176,30 +176,30 @@ const Render3D = {
         Render3D.tex.sky = GL3D.textureFromCanvas(Render3D.makeSky(th));
         Render3D.skyKey = key;
       }
-      GL3D.draw(Render3D.planeM, M4.compose(Render3D.camX * 0.3, 26, camZ - 150, 0, 420, 190, 1), { tex: Render3D.tex.sky, unlit: true, noDepth: true, doubleSide: true, alpha: 1 });
+      GL3D.draw(Render3D.planeM, M4.compose(Render3D.camX * 0.3, 26, camZ + 150, 0, 420, 190, 1), { tex: Render3D.tex.sky, unlit: true, noDepth: true, doubleSide: true, alpha: 1 });
       // 太阳/月亮光晕
       const sun = GL3D.textureFromCanvas(Render3D._sun || (Render3D._sun = Render3D.makeShadow()));
-      GL3D.draw(Render3D.planeM, M4.compose(Render3D.camX * 0.3 + 40, 46, camZ - 148, 0, 46, 46, 1),
+      GL3D.draw(Render3D.planeM, M4.compose(Render3D.camX * 0.3 + 40, 46, camZ + 148, 0, 46, 46, 1),
         { tex: sun, unlit: true, noDepth: true, blend: true, alpha: (th.night > 0.5 ? 0.35 : 0.55), color: [1, 0.98, 0.82] });
     },
 
     drawGround(th, travel) {
       if (!Render3D.ready) return;
       const T = Render3D.th || Render3D.themeRgb(th);
-      const camZ = travel + CFG.CAM_BACK;
+      const camZ = travel - CFG.CAM_BACK;
       const FARZ = Math.max(180, CFG.FAR * 1.15);
       // 大地
-      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.6, camZ - FARZ * 0.45, 0, 90, 1.2, FARZ * 1.1), { color: T.groundRgb });
+      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.6, camZ + FARZ * 0.45, 0, 90, 1.2, FARZ * 1.1), { color: T.groundRgb });
       // 道砟（贴碎石）
-      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.16, camZ - FARZ * 0.42, 0, CFG.WALL_X * 2 + 0.5, 0.36, FARZ * 0.95),
+      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.16, camZ + FARZ * 0.42, 0, CFG.WALL_X * 2 + 0.5, 0.36, FARZ * 0.95),
         { tex: Render3D.tex.gravel, color: [0.86, 0.85, 0.82], uvScale: [FARZ / 9, 3] });
       // 枕木
       const GAP = CFG.SLEEPER_GAP, off = travel % GAP;
       const Q = Render3D.quality === 'low' ? 0.6 : 1;
       const nSlp = Math.round(34 * Q);
       for (let i = 0; i < nSlp; i++) {
-        const z = camZ - 2 - i * GAP + (GAP - off);
-        if (z < camZ - FARZ * 0.5) break;
+        const z = camZ + 2 + i * GAP + (GAP - off);
+        if (z > camZ + FARZ * 0.5) break;
         GL3D.draw(Render3D.cubeM, M4.compose(0, 0.04, z, 0, CFG.ROAD_HALF * 2 + 0.5, 0.14, 0.52), { color: T.sleeperRgb });
       }
       // 铁轨
@@ -207,8 +207,8 @@ const Render3D = {
         const lx = Utils.laneX(ln);
         for (const s of [-1, 1]) {
           const rx = lx + s * CFG.RAIL_HALF;
-          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.17, camZ - FARZ * 0.45, 0, 0.13, 0.14, FARZ * 0.9), { color: [T.railRgb[0] * 0.62, T.railRgb[1] * 0.62, T.railRgb[2] * 0.66] });
-          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.245, camZ - FARZ * 0.45, 0, 0.10, 0.03, FARZ * 0.9),
+          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.17, camZ + FARZ * 0.45, 0, 0.13, 0.14, FARZ * 0.9), { color: [T.railRgb[0] * 0.62, T.railRgb[1] * 0.62, T.railRgb[2] * 0.66] });
+          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.245, camZ + FARZ * 0.45, 0, 0.10, 0.03, FARZ * 0.9),
             { color: [T.railRgb[0] * 0.92, T.railRgb[1] * 0.92, T.railRgb[2] * 0.98] });
         }
       }
@@ -217,8 +217,8 @@ const Render3D = {
       const map = (typeof World !== 'undefined' && Store && Store.data) ? World.map(Store.data.map) : null;
       for (const sgn of [-1, 1]) {
         for (let i = 0; i < SEGN; i++) {
-          const z = camZ - 3 - i * SEGL + (travel % SEGL);
-          if (z < camZ - CFG.FAR * 0.72) break;
+          const z = camZ + 3 + i * SEGL + (travel % SEGL);
+          if (z > camZ + CFG.FAR * 0.72) break;
           const cx = sgn * CFG.WALL_X;
           // 矮墙墙体（混凝土）
           GL3D.draw(Render3D.planeM, M4.compose(cx, 0.50, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 1.0, 1),
@@ -236,8 +236,8 @@ const Render3D = {
       // 接触网支架（地铁感）
       const ng = Render3D.quality === 'low' ? 5 : 7, gp = 26;
       for (let i = 0; i < ng; i++) {
-        const z = camZ - 14 - i * gp + (travel % gp);
-        if (z < camZ - CFG.FAR * 0.6) break;
+        const z = camZ + 14 + i * gp + (travel % gp);
+        if (z > camZ + CFG.FAR * 0.6) break;
         GL3D.draw(Render3D.cubeM, M4.compose(0, 5.30, z, 0, (CFG.WALL_X) * 2, 0.14, 0.14), { color: [0.40, 0.43, 0.48] });
         for (const sgn of [-1, 1]) {
           GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X - 0.10), 2.65, z, 0, 0.18, 5.3, 0.18), { color: [0.36, 0.39, 0.44] });
@@ -268,14 +268,14 @@ const Render3D = {
       };
       for (const sgn of [-1, 1]) {
         // 草地 + 人行道（整条长条，一次画完）
-        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 2.0), 0.05, camZ - FARZ * 0.45, 0, 4.2, 0.14, FARZ * 0.95),
+        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 2.0), 0.05, camZ + FARZ * 0.45, 0, 4.2, 0.14, FARZ * 0.95),
           { color: [0.36, 0.64, 0.29] });
-        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 4.7), 0.06, camZ - FARZ * 0.45, 0, 1.5, 0.16, FARZ * 0.95),
+        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 4.7), 0.06, camZ + FARZ * 0.45, 0, 1.5, 0.16, FARZ * 0.95),
           { color: [0.66, 0.66, 0.63] });
         const base = Math.floor(travel / STEP) * STEP;
         for (let i = 0; i < n; i++) {
-          const z = camZ - 4 - i * STEP + (travel % STEP);
-          if (z < camZ - FARZ) break;
+          const z = camZ + 4 + i * STEP + (travel % STEP);
+          if (z > camZ + FARZ) break;
           const idx = Math.floor(base / STEP) + i;
           const h = 5 + rnd(idx, 1, sgn) * 15;
           const w = 5.4 + rnd(idx, 2, sgn) * 3.6;
@@ -296,8 +296,8 @@ const Render3D = {
         }
         // 路灯
         for (let i = 0; i < Math.round(6 * Q); i++) {
-          const z = camZ - 16 - i * 30 + (travel % 30);
-          if (z < camZ - FARZ) break;
+          const z = camZ + 16 + i * 30 + (travel % 30);
+          if (z > camZ + FARZ) break;
           const lx = sgn * (CFG.WALL_X + 1.4);
           GL3D.draw(Render3D.cyl8, M4.compose(lx, 2.1, z, 0, 0.16, 4.2, 0.16), { color: [0.44, 0.47, 0.52] });
           GL3D.draw(Render3D.cubeM, M4.compose(lx - sgn * 0.45, 4.16, z, 0, 0.9, 0.14, 0.3), { color: [0.44, 0.47, 0.52] });
@@ -315,8 +315,8 @@ const Render3D = {
     drawMapProps(T, camZ, travel, propType) {
       const gap = 34;
       for (let i = 0; i < 6; i++) {
-        const z = camZ - 10 - i * gap + (travel % gap);
-        if (z < camZ - CFG.FAR * 0.6) break;
+        const z = camZ + 10 + i * gap + (travel % gap);
+        if (z > camZ + CFG.FAR * 0.6) break;
         for (const sgn of [-1, 1]) {
           const bx = sgn * (CFG.WALL_X + 3.6);
           switch (propType) {
