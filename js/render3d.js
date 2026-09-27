@@ -370,6 +370,11 @@ const Render3D = {
     drawChar(skin, x, y, zr, pose, worldH, opts) {
       if (!Render3D.ready) return;
       const wz = Render3D.wz(zr);
+      // 真 3D 角色模型（不透明，直接画进深度缓冲即可）
+      if (typeof Chars3D !== 'undefined') {
+        Chars3D.draw(skin, x, y, wz, pose, worldH || CFG.PLAYER_H, Chars3D.outfitTint(skin));
+        return;
+      }
       Render3D.billboards.push({ z: wz, kind: 'char', skin: skin, x: x, y: y, wz: wz, pose: pose, h: worldH || CFG.PLAYER_H });
       if (opts && opts.after) { /* 2D 叠加由 game.js 自行处理 */ }
     },
