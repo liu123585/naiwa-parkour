@@ -8,7 +8,7 @@ const Panels = {
   init() {
     const q = (id) => document.getElementById(id);
     this.el = {
-      diffPick: q('diffPick'), menuNow: q('menuNow'),
+      diffPick: q('diffPick'), modePick: q('modePick'), menuNow: q('menuNow'),
       mapsBody: q('mapsBody'), mapsCoins: q('mapsCoins'),
       codexBody: q('codexBody'), codexCount: q('codexCount'),
       pathBody: q('pathBody'), pathCoins: q('pathCoins'),
@@ -16,6 +16,7 @@ const Panels = {
       rankBody: q('rankBody'), joinBody: q('joinBody'),
     };
     this.outfitSkin = Store.data.char || 'naiwa';
+    this.buildModePick();
     this.buildDiffPick();
     this.refreshMenuNow();
     this.bindNav();
@@ -69,11 +70,33 @@ const Panels = {
       box.appendChild(b);
     });
   },
+  buildModePick() {
+    const box = this.el.modePick;
+    if (!box) return;
+    box.innerHTML = '';
+    MODES.forEach(md => {
+      const b = document.createElement('button');
+      b.className = 'diff-btn mode' + ((Store.data.mode || 'endless') === md.id ? ' active' : '');
+      b.innerHTML = md.name;
+      b.title = md.desc;
+      b.addEventListener('click', () => {
+        Store.data.mode = md.id;
+        if (md.map) Store.data.map = md.map;          // 限时挑战固定埃及地图
+        Store.save();
+        Sound.click();
+        this.buildModePick();
+        this.refreshMenuNow();
+        UI.toast(md.name + '：' + md.desc);
+      });
+      box.appendChild(b);
+    });
+  },
   refreshMenuNow() {
     if (!this.el.menuNow) return;
     const m = World.map(Store.data.map), d = World.diff(Store.data.difficulty);
+    const md = MODES.filter(x => x.id === (Store.data.mode || 'endless'))[0] || MODES[0];
     const best = ((Store.data.bestByMap[m.id] || {})[d.id]) || 0;
-    this.el.menuNow.innerHTML = '当前地图：<b>' + m.name + '</b> · 难度 <b>' + d.name +
+    this.el.menuNow.innerHTML = md.name + ' · 地图 <b>' + m.name + '</b> · 难度 <b>' + d.name +
       '</b> · 记录 ' + best + '　<span style="opacity:.7">（点上方「世界地图」切换）</span>';
   },
 

@@ -81,6 +81,7 @@ const UI = {
     const q = (id) => document.getElementById(id);
     this.el = {
       hud: q('hud'), hudScore: q('hudScore'), hudCoins: q('hudCoins'), hudDist: q('hudDist'),
+      hudSpeed: q('hudSpeed'), hudTimer: q('hudTimer'), hudShield: q('hudShield'), chipTimer: q('chipTimer'), chipShield: q('chipShield'),
       powerBar: q('powerBar'), comboTag: q('comboTag'), toast: q('toast'),
       menu: q('screenMenu'), chars: q('screenChars'), missions: q('screenMissions'),
       settings: q('screenSettings'), pause: q('screenPause'), over: q('screenOver'),
@@ -213,6 +214,29 @@ const UI = {
     if (s !== this._s) { this.el.hudScore.textContent = Utils.fmt(s); this._s = s; }
     if (c !== this._c) { this.el.hudCoins.textContent = Utils.fmt(c); this._c = c; }
     if (d !== this._d) { this.el.hudDist.textContent = Utils.fmt(d); this._d = d; }
+    // 速度（参考游戏 HUD 也会显示当前 m/s）
+    if (this.el.hudSpeed) {
+      const sp = Math.round(g.speed);
+      if (sp !== this._sp) { this.el.hudSpeed.textContent = sp; this._sp = sp; }
+    }
+    // 限时挑战倒计时
+    if (this.el.hudTimer && this.el.chipTimer) {
+      if (g.timeLeft > 0) {
+        this.el.chipTimer.classList.remove('hidden');
+        const tl = Math.ceil(g.timeLeft);
+        if (tl !== this._tl) { this.el.hudTimer.textContent = tl; this._tl = tl; }
+      } else {
+        this.el.chipTimer.classList.add('hidden');
+      }
+    }
+    if (this.el.hudShield && this.el.chipShield) {
+      if (g.powers.shield > 0) {
+        this.el.chipShield.classList.remove('hidden');
+        this.el.hudShield.textContent = Math.ceil(g.powers.shield);
+      } else {
+        this.el.chipShield.classList.add('hidden');
+      }
+    }
 
     // 道具条
     const items = [];
@@ -255,7 +279,7 @@ const UI = {
       this._artWarm = true;
       if (typeof ART !== 'undefined') {
         ART.ensure(Store.data.char);
-        ART.preloadAll(CHARS.map(c => c.skin).concat(['inspector', 'dog']));
+        ART.preloadAll(CHARS.map(c => c.skin).concat(['inspector', 'dog', 'bull']));
       }
     }
     const ch = CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa;

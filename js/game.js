@@ -57,7 +57,12 @@ const Game = {
   reset() {
     // 难度 + 世界地图（高仿：三档难度、多地巡游）
     const dm = (typeof World !== 'undefined') ? World.cur() : { diff: { speedStart: 28, speedMax: 48, accel: 0.53, obstacleRate: 1, coinRate: 1, scoreMul: 1, name: '普通' }, map: null };
-    this.diff = dm.diff; this.mapDef = dm.map;
+    this.mode = (typeof MODES !== 'undefined' && Store.data.mode) ? Store.data.mode : 'endless';
+    const modeDef = (typeof MODES !== 'undefined') ? MODES.filter(m => m.id === this.mode)[0] : null;
+    this.diff = dm.diff;
+    this.mapDef = (modeDef && modeDef.map && typeof World !== 'undefined') ? World.map(modeDef.map) : dm.map;
+    this.timeLeft = (modeDef && modeDef.time) ? modeDef.time : 0;   // 限时挑战倒计时
+    this.challengeWin = false;
     this.time = 0; this.elapsed = 0; this.travel = 0; this.speed = 0;
     this.score = 0; this.runCoins = 0; this.mult = 1; this.maxMult = 1;
     this.coinStreak = 0; this.objs = []; this.parts = []; this.nextZ = 46;
@@ -318,6 +323,17 @@ const Game = {
       if (o.worldZ + (o.len || 0) < this.travel) { o.seen = true; this.markCodex(o); }
     }
 
+    /* ---- 限时挑战倒计时 ---- */
+    if (this.timeLeft > 0) {
+      this.timeLeft -= dt;
+      if (this.timeLeft <= 0) {
+        this.timeLeft = 0;
+        this.challengeWin = true;
+        this.finishRun();
+        return;
+      }
+    }
+
     /* ---- 任务进度 ---- */
     Missions.progress('dist', this.speed * dt);
     Missions.progress('single', Math.floor(this.score), true);
@@ -565,13 +581,7 @@ const Game = {
   crash(o) {
     if (this.god) return;                    // 调试模式：无敌
     const p = this.player;
-    if (p.boardT > 0) {                     // 悬浮板挡一命
-      this.breakBoard(false);
-      p.vy = Math.max(p.vy, 6.5);
-      this.shake = 1.0;
-      return;
-    }
-    if (this.powers.shield > 0) {           // 护盾挡一命
+    if (this.powers.shield > 0) {           // 蓝色护盾：抵挡一次碰撞
       this.powers.shield = 0;
       this.invuln = Math.max(this.invuln, 2.2);
       this.shake = 1.1;
@@ -999,8 +1009,9 @@ Object.assign(Game, {
     const p = this.player;
     const zr = CFG.CAM_BACK - this.chaser.dist;
     const ph = (this.time * 3.4) % 1;
-    Renderer.drawChar('inspector', p.x + 0.95, 0, zr, { state: 'run', t: ph, lean: 0.2, front: true }, CFG.PLAYER_H * 1.05);
-    Renderer.drawChar('dog', p.x - 1.25, 0, zr + 0.6, { state: 'run', t: (ph + 0.5) % 1, lean: -0.2, front: true }, CFG.PLAYER_H * 0.62);
+    // 追逐组合对齐参考游戏：牛来 + 猎犬
+    Renderer.drawChar('bull', p.x + 0.95, 0, zr, { state: 'run', t: ph, lean: 0.2, front: false }, CFG.PLAYER_H * 1.08);
+    Renderer.drawChar('dog', p.x - 1.25, 0, zr + 0.6, { state: 'run', t: (ph + 0.5) % 1, lean: -0.2, front: false }, CFG.PLAYER_H * 0.62);
   },
 
   /* ---------------- 结束 / 复活 ---------------- */
@@ -1062,7 +1073,8 @@ Object.assign(Game, {
       score: sc, coins: this.runCoins, dist: Math.floor(this.travel),
       best: save.best, isBest: isBest, mult: this.maxMult,
       missions: Missions.snapshot(), achievements: newly,
-      canRevive: this.reviveUsed < CFG.MAX_REVIVES && save.coins >= this.reviveCost(),
+      // 对齐参考玩法：不做金币复活，撞两次就被抓，结算只有「再跑一次 / 返回车站」
+      canRevive: false,
       reviveCost: this.reviveCost(),
     });
   },

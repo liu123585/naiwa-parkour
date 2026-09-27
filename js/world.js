@@ -25,6 +25,11 @@ const DIFFICULTIES = [
     desc: '起步就很快、障碍密集，金币略少但分数 ×1.3，老手专属',
   },
 ];
+/* 三种模式（对齐参考游戏：自由选图 / 单地图无尽 / 限时挑战） */
+const MODES = [
+  { id: 'endless', name: '无尽奔跑', desc: '选一张地图一直跑下去，撞两次就被抓' },
+  { id: 'challenge60', name: '60秒挑战', desc: '埃及·金沙秘境，60 秒内跑出最远距离', map: 'egypt', time: 60 },
+];
 const DIFF_MAP = {};
 DIFFICULTIES.forEach(d => { DIFF_MAP[d.id] = d; });
 

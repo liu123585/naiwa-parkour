@@ -140,13 +140,10 @@ function skillCost(s, lv) { return Math.round(s.base * Math.pow(1.85, lv)); }
 
 /* ---------------- 道具 ----------------
    kind: 生成器里出现的概率权重 */
+/* 道具与参考游戏保持一致：只有「红色磁铁」与「蓝色护盾」两种 */
 const POWERS = [
-  { id: 'magnet', name: '金币磁铁', color: '#ff6b6b', weight: 26 },
-  { id: 'jet', name: '喷射背包', color: '#7fb6ff', weight: 18 },
-  { id: 'x2', name: '双倍金币', color: '#ffd34d', weight: 24 },
-  { id: 'shoe', name: '超级跑鞋', color: '#ff9d4d', weight: 22 },
-  { id: 'board', name: '悬浮板', color: '#ff6bd0', weight: 16 },
-  { id: 'shield', name: '护盾', color: '#2ee6d6', weight: 20 },
+  { id: 'magnet', name: '金币磁铁', color: '#e6423c', weight: 50 },
+  { id: 'shield', name: '护盾', color: '#2f8bff', weight: 50 },
 ];
 
 /* ---------------- 任务池 ---------------- */
@@ -204,6 +201,7 @@ const SAVE_KEY = 'naiwaRun.save.v1';
 const DEFAULT_SAVE = {
   coins: 0,
   difficulty: 'normal',
+  mode: 'endless',
   map: 'city',
   mapsUnlocked: ['city', 'changan'],
   outfits: {},            // skin -> 已穿戴的服装 id

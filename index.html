@@ -23,9 +23,11 @@
         <div class="chip chip-score"><i class="ico ico-trophy"></i><b id="hudScore">0</b></div>
         <div class="chip chip-coin"><i class="ico ico-coin"></i><b id="hudCoins">0</b></div>
         <div class="chip chip-dist"><b id="hudDist">0</b><span>m</span></div>
+        <div class="chip chip-speed"><b id="hudSpeed">0</b><span>m/s</span></div>
+        <div class="chip chip-timer hidden" id="chipTimer"><b id="hudTimer">60</b><span>s</span></div>
+        <div class="chip chip-shield hidden" id="chipShield"><b id="hudShield">8</b><span>s 护盾</span></div>
       </div>
       <div class="hud-right">
-        <button id="btnBoard" class="icon-btn" title="悬浮板（空格）"><i class="ico ico-board"></i></button>
         <button id="btnPause" class="icon-btn" title="暂停（P）"><i class="ico ico-pause"></i></button>
       </div>
     </div>
@@ -73,6 +75,7 @@
         <div class="stat-pill"><i class="ico ico-run"></i><span>总里程</span><b id="menuTotal">0</b><span>m</span></div>
       </div>
 
+      <div class="mode-pick" id="modePick"></div>
       <div class="diff-pick" id="diffPick"></div>
       <div class="menu-now" id="menuNow"></div>
 

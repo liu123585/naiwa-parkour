@@ -21,6 +21,7 @@ const ART = {
     cybernaiwa: { p: 'cybernaiwa-portrait.png', r: 'cybernaiwa-run.png' },
     inspector: { p: 'inspector-portrait.png', r: 'inspector-run.png' },
     dog: { p: 'dog-portrait.png', r: 'dog-run.png' },
+    bull: { p: null, r: 'bull-run.png' },
   },
   /* 场景贴图 */
   textures: {

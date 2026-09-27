@@ -13,7 +13,9 @@ const Render3D = {
     if (!GL3D.init(canvas)) { this.ready = false; return false; }
     this.ready = true;
     this.tex = {};
-    this.tex.graffiti = GL3D.texture('art/tex-graffiti.png');
+    // 墙面：主用干净的混凝土墙，旧涂鸦墙作为稀疏点缀
+    this.tex.graffiti = GL3D.texture('art/tex-wall.png');
+    this.tex.graffiti2 = GL3D.texture('art/tex-graffiti.png');
     this.tex.gravel = GL3D.textureFromCanvas(this.makeGravel());
     this.tex.shadow = GL3D.textureFromCanvas(this.makeShadow());
     this.tex.sky = GL3D.textureFromCanvas(this.makeSky(THEMES.day, THEMES.day));
@@ -144,7 +146,7 @@ const Render3D = {
       GL3D.draw(Render3D.cubeM, M4.compose(0, -0.6, camZ - FARZ * 0.45, 0, 90, 1.2, FARZ * 1.1), { color: T.groundRgb });
       // 道砟（贴碎石）
       GL3D.draw(Render3D.cubeM, M4.compose(0, -0.16, camZ - FARZ * 0.42, 0, CFG.ROAD_HALF * 2 + 1.6, 0.36, FARZ * 0.95),
-        { tex: Render3D.tex.gravel, color: [1, 1, 1], uvScale: [FARZ / 9, 3] });
+        { tex: Render3D.tex.gravel, color: [0.86, 0.85, 0.82], uvScale: [FARZ / 9, 3] });
       // 枕木
       const GAP = CFG.SLEEPER_GAP, off = travel % GAP;
       const Q = Render3D.quality === 'low' ? 0.6 : 1;
@@ -159,9 +161,9 @@ const Render3D = {
         const lx = Utils.laneX(ln);
         for (const s of [-1, 1]) {
           const rx = lx + s * CFG.RAIL_HALF;
-          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.17, camZ - FARZ * 0.45, 0, 0.13, 0.14, FARZ * 0.9), { color: T.railRgb });
+          GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.17, camZ - FARZ * 0.45, 0, 0.13, 0.14, FARZ * 0.9), { color: [T.railRgb[0] * 0.62, T.railRgb[1] * 0.62, T.railRgb[2] * 0.66] });
           GL3D.draw(Render3D.cubeM, M4.compose(rx, 0.245, camZ - FARZ * 0.45, 0, 0.10, 0.03, FARZ * 0.9),
-            { color: [Math.min(1, T.railRgb[0] * 1.2), Math.min(1, T.railRgb[1] * 1.2), Math.min(1, T.railRgb[2] * 1.2)] });
+            { color: [T.railRgb[0] * 0.92, T.railRgb[1] * 0.92, T.railRgb[2] * 0.98] });
         }
       }
       // 两侧墙（分段贴涂鸦）+ 墙顶压条
@@ -172,8 +174,14 @@ const Render3D = {
           const z = camZ - 3 - i * SEGL + (travel % SEGL);
           if (z < camZ - CFG.FAR * 0.72) break;
           const cx = sgn * CFG.WALL_X;
+          // 主墙面：干净混凝土（带主题色调）
           GL3D.draw(Render3D.planeM, M4.compose(cx, 1.55, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 3.1, 1),
-            { tex: Render3D.tex.graffiti, color: [1, 1, 1], doubleSide: true, uvScale: [SEGL / 3.1, 1] });
+            { tex: Render3D.tex.graffiti, color: [0.94 * T.wallRgb[0] + 0.2, 0.94 * T.wallRgb[1] + 0.2, 0.94 * T.wallRgb[2] + 0.2], doubleSide: true, uvScale: [1, 1] });
+          // 每隔三段贴一块旧涂鸦，作为点缀而不是满墙
+          if ((i + Math.floor(travel / SEGL)) % 3 === 1) {
+            GL3D.draw(Render3D.planeM, M4.compose(cx - sgn * 0.03, 1.5, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 2.6, 1),
+              { tex: Render3D.tex.graffiti2, color: [0.92, 0.92, 0.94], doubleSide: true, uvScale: [SEGL / 3.1, 1], blend: true, alpha: 0.92 });
+          }
           GL3D.draw(Render3D.cubeM, M4.compose(cx, 3.18, z - SEGL / 2, 0, 0.5, 0.22, SEGL), { color: T.wallTopRgb });
         }
         GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 0.28), 1.55, camZ - CFG.FAR * 0.35, 0, 0.14, 3.1, CFG.FAR * 0.7), { color: T.wallDarkRgb });
@@ -193,8 +201,8 @@ const Render3D = {
     },
 
     drawMapProps(T, camZ, travel, propType) {
-      const gap = 22;
-      for (let i = 0; i < 9; i++) {
+      const gap = 34;
+      for (let i = 0; i < 6; i++) {
         const z = camZ - 10 - i * gap + (travel % gap);
         if (z < camZ - CFG.FAR * 0.6) break;
         for (const sgn of [-1, 1]) {
@@ -264,10 +272,16 @@ const Render3D = {
       GL3D.draw(Render3D.cubeM, M4.compose(cx, o.y0 + h / 2, cz, 0, w, h, len), { color: col });
       // 裙板
       GL3D.draw(Render3D.cubeM, M4.compose(cx, o.y0 + 0.12, cz, 0, w + 0.04, 0.24, len), { color: dark });
-      // 车窗带
+      // 车窗：按节分成一扇扇窗户，而不是一条长带
       if (h > 1.0) {
-        GL3D.draw(Render3D.cubeM, M4.compose(cx, o.y0 + h * 0.66, cz, 0, w + 0.06, h * 0.26, len * 0.96),
-          { color: (T && T.night > 0.4) ? [1.0, 0.92, 0.66] : [0.12, 0.16, 0.24], unlit: (T && T.night > 0.4) });
+        const winCol = (T && T.night > 0.4) ? [1.0, 0.92, 0.66] : [0.14, 0.18, 0.26];
+        const segs = Math.max(3, Math.min(8, Math.round(len / 2.4)));
+        const winH = h * 0.26, wy = o.y0 + h * 0.64;
+        for (let k = 0; k < segs; k++) {
+          const wz2 = z0 + (k + 0.5) / segs * (z1 - z0);
+          GL3D.draw(Render3D.cubeM, M4.compose(cx, wy, wz2, 0, w + 0.06, winH, (len / segs) * 0.58),
+            { color: winCol, unlit: (T && T.night > 0.4) });
+        }
       }
       // 车顶压条
       GL3D.draw(Render3D.cubeM, M4.compose(cx, o.y0 + h + 0.05, cz, 0, w * 0.92, 0.1, len * 0.94),
