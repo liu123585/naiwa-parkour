@@ -93,6 +93,9 @@ const Chars3D = {
   K(parts, grp, size, pos, color, rot, opt) {
     parts.push({ grp: grp, mesh: 'cone', size: size, pos: pos, color: color, rot: rot || [0, 0, 0], opt: opt || null });
   },
+  S(parts, grp, size, pos, color, rot, opt) {
+    parts.push({ grp: grp, mesh: 'sphere', size: size, pos: pos, color: color, rot: rot || [0, 0, 0], opt: opt || null });
+  },
 
   /* ---------- 人形基础模型 ---------- */
   human(o) {
@@ -136,31 +139,39 @@ const Chars3D = {
   build(skin) {
     const p = [];
     switch (skin) {
-      /* —— 奶蛙：梨形身体 + 绿色大眼睛 + 细四肢 —— */
+      /* —— 奶蛙：圆润梨形身体 + 头顶鼓眼（背视也认得出） —— */
       case 'naiwa': {
         const Y = '#ffd84a', YD = '#e8b81c', CREAM = '#fff8d8', DARK = '#3a3f46';
-        this.C(p, 'body', [0.42, 0.40, 0.40], [0, 0.42, 0], Y);          // 梨形身体（上窄）
-        this.C(p, 'body', [0.50, 0.36, 0.50], [0, 0.26, 0], Y);          // 下腹更宽
-        this.B(p, 'body', [0.30, 0.30, 0.05], [0, 0.33, 0.235], CREAM);  // 乳白肚皮
-        for (const s of [-1, 1]) {                                        // 细腿
+        // 身体：上窄下宽的水滴形
+        this.S(p, 'body', [0.46, 0.42, 0.44], [0, 0.40, 0], Y);
+        this.S(p, 'body', [0.54, 0.36, 0.50], [0, 0.24, 0.01], Y);
+        this.S(p, 'body', [0.34, 0.30, 0.20], [0, 0.31, 0.19], CREAM);   // 乳白肚皮
+        // 短腿 + 大脚掌
+        for (const s of [-1, 1]) {
           const g = s < 0 ? 'legL' : 'legR';
-          this.C(p, g, [0.085, 0.22, 0.085], [s * 0.14, -0.11, 0], YD);
-          this.B(p, g, [0.20, 0.07, 0.28], [s * 0.14, -0.235, 0.03], YD);
+          this.C(p, g, [0.10, 0.20, 0.10], [s * 0.135, 0.14, 0], YD);
+          this.S(p, g, [0.21, 0.09, 0.27], [s * 0.135, 0.045, 0.045], YD);
         }
-        for (const s of [-1, 1]) {                                        // 细手臂
+        // 手臂（外张，跑动时摆动）+ 深色小手
+        for (const s of [-1, 1]) {
           const g = s < 0 ? 'armL' : 'armR';
-          this.C(p, g, [0.075, 0.26, 0.075], [s * 0.235, -0.13, 0], YD);
-          this.B(p, g, [0.13, 0.09, 0.13], [s * 0.235, -0.28, 0], DARK);
+          this.C(p, g, [0.085, 0.24, 0.085], [s * 0.245, 0.42, 0.01], YD, [0, 0, s * -0.16]);
+          this.S(p, g, [0.13, 0.13, 0.13], [s * 0.285, 0.30, 0.02], DARK);
         }
-        this.B(p, 'head', [0.44, 0.42, 0.40], [0, 0.84, 0], Y);           // 巨头
-        for (const s of [-1, 1]) {                                        // 鼓出的绿眼
-          this.B(p, 'head', [0.17, 0.17, 0.13], [s * 0.115, 0.94, 0.145], '#f4f7f2');
-          this.B(p, 'head', [0.085, 0.095, 0.04], [s * 0.115, 0.935, 0.215], '#2f6b3a');
-          this.B(p, 'head', [0.035, 0.04, 0.02], [s * 0.115, 0.95, 0.238], '#101418');
+        // 头（圆球）
+        this.S(p, 'head', [0.46, 0.42, 0.44], [0, 0.80, 0], Y);
+        // 头顶鼓出的两只大眼睛：背视也能看到眼包
+        for (const s of [-1, 1]) {
+          this.S(p, 'head', [0.22, 0.21, 0.20], [s * 0.125, 0.985, 0.075], Y);
+          this.S(p, 'head', [0.155, 0.155, 0.10], [s * 0.125, 0.985, 0.155], '#f7faf4');
+          this.S(p, 'head', [0.095, 0.10, 0.05], [s * 0.125, 0.982, 0.205], '#2f6b3a');
+          this.S(p, 'head', [0.042, 0.048, 0.03], [s * 0.125, 0.986, 0.228], '#0e1216');
         }
-        this.B(p, 'head', [0.19, 0.028, 0.03], [0, 0.775, 0.20], '#5b4a2a');   // 一字嘴
-        this.B(p, 'head', [0.06, 0.012, 0.02], [0, 0.86, 0.21], '#c9a24a');
-        this.B(p, 'head', [0.40, 0.09, 0.34], [0, 1.03, 0.03], Y);             // 头顶鼓包（背视也认得出）
+        // 一字嘴 + 腮红
+        this.B(p, 'head', [0.20, 0.028, 0.04], [0, 0.705, 0.195], '#6b5330');
+        for (const s of [-1, 1]) this.S(p, 'head', [0.10, 0.07, 0.06], [s * 0.185, 0.735, 0.155], '#f6a76e');
+        // 尾巴小肉包
+        this.S(p, 'body', [0.16, 0.14, 0.14], [0, 0.27, -0.245], YD);
         break;
       }
       /* —— 奶龙：黄色小恐龙 + 角 + 小翅膀 —— */
@@ -181,7 +192,7 @@ const Chars3D = {
         for (const s of [-1, 1]) {
           this.B(p, 'body', [0.05, 0.22, 0.20], [s * 0.23, 0.60, -0.14], O, [0, 0, s * -0.5]);
         }
-        this.B(p, 'head', [0.46, 0.44, 0.42], [0, 0.83, 0], Y);
+        this.S(p, 'head', [0.48, 0.44, 0.44], [0, 0.80, 0], Y);
         for (const s of [-1, 1]) {                                     // 小角
           this.K(p, 'head', [0.10, 0.16, 0.10], [s * 0.15, 1.07, -0.02], O, [0.2, 0, s * 0.35]);
         }
@@ -322,7 +333,7 @@ const Chars3D = {
         }
         this.B(p, 'body', [0.20, 0.20, 0.05], [0, 0.42, 0.23], CY, null, { unlit: true });   // 能量核心
         this.B(p, 'body', [0.40, 0.03, 0.03], [0, 0.60, 0.20], '#ff3ec8', null, { unlit: true });
-        this.B(p, 'head', [0.46, 0.42, 0.42], [0, 0.84, 0], M);
+        this.S(p, 'head', [0.48, 0.44, 0.44], [0, 0.80, 0], M);
         for (const s of [-1, 1]) {
           this.B(p, 'head', [0.17, 0.13, 0.06], [s * 0.115, 0.90, 0.20], CY, null, { unlit: true });
         }
@@ -509,14 +520,49 @@ const Chars3D = {
       let col = hex2rgb(part.color);
       if (tint) col = hueRotate(col, tint);
       let mesh = GL3D.cube();
-      if (part.mesh === 'cyl') mesh = GL3D.cylinder(10);
-      else if (part.mesh === 'cone') mesh = GL3D.cone(10);
+      if (part.mesh === 'cyl') mesh = GL3D.cylinder(12);
+      else if (part.mesh === 'cone') mesh = GL3D.cone(12);
+      else if (part.mesh === 'sphere') mesh = GL3D.sphere(14, 9);
+      // 卡通描边：膨胀一层壳体并用镜像翻转面朝向，只在外轮廓露出来
+      if (part.mesh === 'cube') {
+        GL3D.draw(mesh, M4.mul(m, mTRS(0, 0, 0, 0, 0, 0, 1.075, 1.075, -1.075)),
+          { color: [0.13, 0.14, 0.17], unlit: true, blend: false });
+      }
       GL3D.draw(mesh, m, {
         color: col,
         unlit: !!(part.opt && part.opt.unlit),
         blend: false,
       });
     }
+  },
+
+  /* ---------- 用真 3D 模型渲染菜单/商店缩略图 ---------- */
+  thumbs: {},
+  buildThumbs(canvas3d, skins) {
+    if (typeof GL3D === 'undefined' || !GL3D.gl || !canvas3d) return false;
+    const gl = GL3D.gl;
+    const W = canvas3d.width, H = canvas3d.height;
+    if (!W || !H) return false;
+    const fakeTheme = {
+      skyBot: [0.5, 0.75, 0.95], fog: [1, 1, 1], fogAmount: 0, night: 0,
+      light: [0.42, 0.86, 0.30], fogStart: 999, fogEnd: 1000,
+    };
+    const size = Math.round(H * 0.58);
+    const sx = Math.round((W - size) / 2), sy = Math.round((H - size) / 2);
+    for (const skin of skins) {
+      try {
+        GL3D.frame([0, 0.60, 2.18], [0, 0.56, 0], fakeTheme, W, H, 1);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        this.draw(skin, 0, 0.0, 0, { state: 'idle', t: 0.12, front: true }, 1.0, 0);
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 256;
+        const c2 = cv.getContext('2d');
+        c2.drawImage(canvas3d, sx, sy, size, size, 0, 0, 256, 256);
+        this.thumbs[skin] = cv;
+      } catch (e) { /* 单个失败不影响其它 */ }
+    }
+    return true;
   },
 
   /* 解析服装 filter → 色相角度 */

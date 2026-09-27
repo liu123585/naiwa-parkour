@@ -4,6 +4,11 @@
    ========================================================= */
 'use strict';
 
+const CITY_COLS = [
+  [0.94, 0.90, 0.79], [0.88, 0.68, 0.54], [0.80, 0.83, 0.89], [0.93, 0.82, 0.64],
+  [0.71, 0.81, 0.77], [0.91, 0.75, 0.77], [0.97, 0.94, 0.88], [0.77, 0.73, 0.83],
+];
+
 const Render3D = {
   ready: false, travel: 0, camX: 0, camY: CFG.CAM_Y,
   th: null, skyKey: '', billboards: [], texCache2: null,
@@ -17,6 +22,7 @@ const Render3D = {
     this.tex.graffiti = GL3D.texture('art/tex-wall.png');
     this.tex.graffiti2 = GL3D.texture('art/tex-graffiti.png');
     this.tex.gravel = GL3D.textureFromCanvas(this.makeGravel());
+    this.tex.facade = GL3D.textureFromCanvas(this.makeFacade());
     this.tex.shadow = GL3D.textureFromCanvas(this.makeShadow());
     this.tex.sky = GL3D.textureFromCanvas(this.makeSky(THEMES.day, THEMES.day));
     this.tex.steel = null;
@@ -53,6 +59,36 @@ const Render3D = {
     }
     return cv;
   },
+  /* 楼房外墙：白底 + 窗格（绘制时用 color 染色出不同色楼房） */
+  makeFacade() {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const x = cv.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 256, 256);
+    // 每层窗
+    for (let ry = 0; ry < 8; ry++) {
+      // 楼层线
+      x.fillStyle = 'rgba(0,0,0,.10)';
+      x.fillRect(0, ry * 32 + 29, 256, 3);
+      for (let rx = 0; rx < 4; rx++) {
+        const wx = rx * 64 + 12, wy = ry * 32 + 7;
+        const lit = Math.random() < 0.22;
+        x.fillStyle = lit ? 'rgba(255,226,150,.95)' : 'rgba(52,68,92,.88)';
+        x.fillRect(wx, wy, 40, 20);
+        x.fillStyle = 'rgba(255,255,255,.35)';
+        x.fillRect(wx, wy, 40, 4);
+        x.fillStyle = 'rgba(0,0,0,.22)';
+        x.fillRect(wx + 18, wy, 3, 20);
+      }
+    }
+    // 轻微污渍
+    for (let i = 0; i < 60; i++) {
+      x.fillStyle = 'rgba(0,0,0,' + (0.02 + Math.random() * 0.05).toFixed(2) + ')';
+      x.fillRect(Math.random() * 256, Math.random() * 256, 6 + Math.random() * 30, 3 + Math.random() * 10);
+    }
+    return cv;
+  },
+
   makeShadow() {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 128;
@@ -113,12 +149,22 @@ const Render3D = {
         c2.globalAlpha = 1;
       }
       Render3D.travel = travel;
+      // 首次进游戏：用场上同款真 3D 模型渲染菜单/商店缩略图（避免封面与角色不一致）
+      if (!Render3D._thumbTried && typeof Chars3D !== 'undefined') {
+        Render3D._thumbTried = true;
+        try {
+          const skins = (typeof CHARS !== 'undefined' ? CHARS.map(c => c.skin) : [])
+            .concat(['inspector', 'dog', 'bull']);
+          if (Chars3D.buildThumbs(Render3D.canvas3d, skins)) Chars3D.thumbsReady = true;
+        } catch (e) { Render3D._thumbTried = false; }
+      }
       const T = Render3D.themeRgb(th);
       Render3D.th = T;
       // 相机在角色后方 CAM_BACK 处；角色世界 z = travel（前方为 -Z）
       const camZ = travel + CFG.CAM_BACK;
       const cam = [Render3D.camX, Render3D.camY, camZ];
-      const target = [Render3D.camX * 0.55, 1.15, camZ - 12];
+      // 俯视前方赛道（地铁跑酷视角）：看得远、角色落在画面下半部
+      const target = [Render3D.camX * 0.5, 0.35, camZ - 18];
       const dtReal = Math.max(0.001, Math.min(0.2, (time || 0) - (Render3D._lastT || time || 0)));
       Render3D._lastT = time || 0;
       Render3D.tickPerf(dtReal);
@@ -145,7 +191,7 @@ const Render3D = {
       // 大地
       GL3D.draw(Render3D.cubeM, M4.compose(0, -0.6, camZ - FARZ * 0.45, 0, 90, 1.2, FARZ * 1.1), { color: T.groundRgb });
       // 道砟（贴碎石）
-      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.16, camZ - FARZ * 0.42, 0, CFG.ROAD_HALF * 2 + 1.6, 0.36, FARZ * 0.95),
+      GL3D.draw(Render3D.cubeM, M4.compose(0, -0.16, camZ - FARZ * 0.42, 0, CFG.WALL_X * 2 + 0.5, 0.36, FARZ * 0.95),
         { tex: Render3D.tex.gravel, color: [0.86, 0.85, 0.82], uvScale: [FARZ / 9, 3] });
       // 枕木
       const GAP = CFG.SLEEPER_GAP, off = travel % GAP;
@@ -166,7 +212,7 @@ const Render3D = {
             { color: [T.railRgb[0] * 0.92, T.railRgb[1] * 0.92, T.railRgb[2] * 0.98] });
         }
       }
-      // 两侧墙（分段贴涂鸦）+ 墙顶压条
+      // 两侧矮护墙（路肩矮墙，不再挡视线）+ 墙顶压条
       const SEGL = 13, SEGN = Render3D.quality === 'low' ? 10 : 16;
       const map = (typeof World !== 'undefined' && Store && Store.data) ? World.map(Store.data.map) : null;
       for (const sgn of [-1, 1]) {
@@ -174,31 +220,97 @@ const Render3D = {
           const z = camZ - 3 - i * SEGL + (travel % SEGL);
           if (z < camZ - CFG.FAR * 0.72) break;
           const cx = sgn * CFG.WALL_X;
-          // 主墙面：干净混凝土（带主题色调）
-          GL3D.draw(Render3D.planeM, M4.compose(cx, 1.55, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 3.1, 1),
-            { tex: Render3D.tex.graffiti, color: [0.94 * T.wallRgb[0] + 0.2, 0.94 * T.wallRgb[1] + 0.2, 0.94 * T.wallRgb[2] + 0.2], doubleSide: true, uvScale: [1, 1] });
-          // 每隔三段贴一块旧涂鸦，作为点缀而不是满墙
+          // 矮墙墙体（混凝土）
+          GL3D.draw(Render3D.planeM, M4.compose(cx, 0.50, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 1.0, 1),
+            { tex: Render3D.tex.graffiti, color: [0.94 * T.wallRgb[0] + 0.22, 0.94 * T.wallRgb[1] + 0.22, 0.94 * T.wallRgb[2] + 0.22], doubleSide: true, uvScale: [SEGL / 6, 1] });
+          // 稀疏涂鸦点缀
           if ((i + Math.floor(travel / SEGL)) % 3 === 1) {
-            GL3D.draw(Render3D.planeM, M4.compose(cx - sgn * 0.03, 1.5, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 2.6, 1),
-              { tex: Render3D.tex.graffiti2, color: [0.92, 0.92, 0.94], doubleSide: true, uvScale: [SEGL / 3.1, 1], blend: true, alpha: 0.92 });
+            GL3D.draw(Render3D.planeM, M4.compose(cx - sgn * 0.03, 0.46, z - SEGL / 2, sgn * Math.PI / 2, SEGL, 0.82, 1),
+              { tex: Render3D.tex.graffiti2, color: [0.95, 0.95, 0.97], doubleSide: true, uvScale: [SEGL / 5, 1], blend: true, alpha: 0.9 });
           }
-          GL3D.draw(Render3D.cubeM, M4.compose(cx, 3.18, z - SEGL / 2, 0, 0.5, 0.22, SEGL), { color: T.wallTopRgb });
+          GL3D.draw(Render3D.cubeM, M4.compose(cx, 1.06, z - SEGL / 2, 0, 0.44, 0.16, SEGL), { color: T.wallTopRgb });
         }
-        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 0.28), 1.55, camZ - CFG.FAR * 0.35, 0, 0.14, 3.1, CFG.FAR * 0.7), { color: T.wallDarkRgb });
       }
-      // 接触网支架
-      const ng = Render3D.quality === 'low' ? 5 : 7, gp = 24;
+      // 墙外：草地 / 人行道 / 城市楼房 / 行道树
+      Render3D.api.drawCity(T, camZ, travel);
+      // 接触网支架（地铁感）
+      const ng = Render3D.quality === 'low' ? 5 : 7, gp = 26;
       for (let i = 0; i < ng; i++) {
-        const z = camZ - 12 - i * gp + (travel % gp);
+        const z = camZ - 14 - i * gp + (travel % gp);
         if (z < camZ - CFG.FAR * 0.6) break;
-        GL3D.draw(Render3D.cubeM, M4.compose(0, 4.55, z, 0, (CFG.WALL_X) * 2, 0.16, 0.16), { color: [0.40, 0.43, 0.48] });
+        GL3D.draw(Render3D.cubeM, M4.compose(0, 5.30, z, 0, (CFG.WALL_X) * 2, 0.14, 0.14), { color: [0.40, 0.43, 0.48] });
         for (const sgn of [-1, 1]) {
-          GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X - 0.12), 2.3, z, 0, 0.2, 4.6, 0.2), { color: [0.36, 0.39, 0.44] });
+          GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X - 0.10), 2.65, z, 0, 0.18, 5.3, 0.18), { color: [0.36, 0.39, 0.44] });
         }
       }
       // 地图专属路边道具
       if (map) Render3D.drawMapProps(T, camZ, travel, map.prop);
     },
+
+    /* 行道树 */
+    drawTree(x, z, seed) {
+      GL3D.draw(Render3D.cyl8, M4.compose(x, 1.05, z, 0, 0.30, 2.1, 0.30), { color: [0.44, 0.31, 0.20] });
+      const g = [0.20 + seed * 0.14, 0.52 + seed * 0.22, 0.21 + seed * 0.12];
+      GL3D.draw(Render3D.cylM, M4.compose(x, 2.75, z, 0, 2.5, 1.9, 2.5), { color: g });
+      GL3D.draw(Render3D.cylM, M4.compose(x + 0.2, 3.6, z - 0.15, 0, 1.6, 1.4, 1.6),
+        { color: [Math.min(1, g[0] * 1.16), Math.min(1, g[1] * 1.08), Math.min(1, g[2] * 1.14)] });
+    },
+
+    /* 墙外城市：草地 + 人行道 + 楼房 + 行道树 + 路灯 */
+    drawCity(T, camZ, travel) {
+      const Q = Render3D.quality === 'low' ? 0.55 : 1;
+      const STEP = 12, n = Math.round(16 * Q);
+      const FARZ = Math.min(CFG.FAR * 0.85, 165);
+      const cols = CITY_COLS;
+      const rnd = (idx, k, sgn) => {
+        const s = Math.sin((idx * 37.31 + k * 11.7 + (sgn > 0 ? 0.37 : 0)) * 12.9898) * 43758.5453;
+        return s - Math.floor(s);
+      };
+      for (const sgn of [-1, 1]) {
+        // 草地 + 人行道（整条长条，一次画完）
+        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 2.0), 0.05, camZ - FARZ * 0.45, 0, 4.2, 0.14, FARZ * 0.95),
+          { color: [0.36, 0.64, 0.29] });
+        GL3D.draw(Render3D.cubeM, M4.compose(sgn * (CFG.WALL_X + 4.7), 0.06, camZ - FARZ * 0.45, 0, 1.5, 0.16, FARZ * 0.95),
+          { color: [0.66, 0.66, 0.63] });
+        const base = Math.floor(travel / STEP) * STEP;
+        for (let i = 0; i < n; i++) {
+          const z = camZ - 4 - i * STEP + (travel % STEP);
+          if (z < camZ - FARZ) break;
+          const idx = Math.floor(base / STEP) + i;
+          const h = 5 + rnd(idx, 1, sgn) * 15;
+          const w = 5.4 + rnd(idx, 2, sgn) * 3.6;
+          const bx = sgn * (CFG.WALL_X + 7.6 + rnd(idx, 3, sgn) * 2.4);
+          const col = cols[(idx + (sgn > 0 ? 3 : 0)) % cols.length];
+          GL3D.draw(Render3D.cubeM, M4.compose(bx, h / 2, z, 0, w, h, w * 0.82),
+            { tex: Render3D.tex.facade, color: col, uvScale: [w / 3.4, h / 3.4] });
+          GL3D.draw(Render3D.cubeM, M4.compose(bx, h + 0.28, z, 0, w + 0.8, 0.56, w * 0.82 + 0.8),
+            { color: [col[0] * 0.66, col[1] * 0.66, col[2] * 0.68] });
+          // 第二排更高的楼，增加纵深
+          if (rnd(idx, 4, sgn) > 0.34) {
+            const h2 = h + 6 + rnd(idx, 5, sgn) * 11;
+            GL3D.draw(Render3D.cubeM, M4.compose(bx + sgn * 8.0, h2 / 2, z + 3.2, 0, w * 1.15, h2, w * 0.95),
+              { tex: Render3D.tex.facade, color: [Math.min(1, col[0] * 0.88 + 0.10), Math.min(1, col[1] * 0.88 + 0.10), Math.min(1, col[2] * 0.88 + 0.14)], uvScale: [w / 3.4, h2 / 3.4] });
+          }
+          // 行道树
+          if (rnd(idx, 6, sgn) > 0.42) Render3D.api.drawTree(sgn * (CFG.WALL_X + 2.3), z + 5.2, rnd(idx, 7, sgn));
+        }
+        // 路灯
+        for (let i = 0; i < Math.round(6 * Q); i++) {
+          const z = camZ - 16 - i * 30 + (travel % 30);
+          if (z < camZ - FARZ) break;
+          const lx = sgn * (CFG.WALL_X + 1.4);
+          GL3D.draw(Render3D.cyl8, M4.compose(lx, 2.1, z, 0, 0.16, 4.2, 0.16), { color: [0.44, 0.47, 0.52] });
+          GL3D.draw(Render3D.cubeM, M4.compose(lx - sgn * 0.45, 4.16, z, 0, 0.9, 0.14, 0.3), { color: [0.44, 0.47, 0.52] });
+          GL3D.draw(Render3D.cubeM, M4.compose(lx - sgn * 0.82, 4.02, z, 0, 0.56, 0.2, 0.34),
+            { color: T.lampRgb, unlit: (T.night > 0.3) });
+        }
+      }
+    },
+
+    __unusedPalette: [
+      [0.94, 0.90, 0.79], [0.88, 0.68, 0.54], [0.80, 0.83, 0.89], [0.93, 0.82, 0.64],
+      [0.71, 0.81, 0.77], [0.91, 0.75, 0.77], [0.97, 0.94, 0.88], [0.77, 0.73, 0.83],
+    ],
 
     drawMapProps(T, camZ, travel, propType) {
       const gap = 34;
@@ -206,7 +318,7 @@ const Render3D = {
         const z = camZ - 10 - i * gap + (travel % gap);
         if (z < camZ - CFG.FAR * 0.6) break;
         for (const sgn of [-1, 1]) {
-          const bx = sgn * (CFG.WALL_X - 0.55);
+          const bx = sgn * (CFG.WALL_X + 3.6);
           switch (propType) {
             case 'lantern':
               GL3D.draw(Render3D.cyl8, M4.compose(bx, 1.5, z, 0, 0.12, 3.0, 0.12), { color: [0.32, 0.22, 0.16] });

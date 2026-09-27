@@ -103,7 +103,7 @@ const GL3D = {
     this.canvas = canvas;
     let gl = null;
     try {
-      gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance', depth: true })
+      gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance', depth: true })
         || canvas.getContext('experimental-webgl', { antialias: false });
     } catch (e) { gl = null; }
     if (!gl) { this.failed = true; return false; }
@@ -247,6 +247,33 @@ const GL3D = {
     for (let i = 0; i < seg; i++) idx.push(cBot, cBot + 2 + i, cBot + 1 + i);
     this._cone = this.makeMesh(pos, nor, uv, idx);
     return this._cone;
+  },
+
+  /* 球体（单位直径 1，中心在原点）—— 用于圆润的卡通角色 */
+  sphere(seg, rings) {
+    seg = seg || 16; rings = rings || 10;
+    const key = 'sph' + seg + '_' + rings;
+    if (this[key]) return this[key];
+    const pos = [], nor = [], uv = [], idx = [];
+    for (let r = 0; r <= rings; r++) {
+      const phi = Math.PI * (1 - r / rings);        // 从下往上
+      const y = Math.cos(phi) * 0.5, rad = Math.sin(phi) * 0.5;
+      for (let i = 0; i <= seg; i++) {
+        const a = i / seg * Math.PI * 2;
+        const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
+        pos.push(x, y, z);
+        nor.push(rad ? x / rad : 0, y * 2, rad ? z / rad : 0);
+        uv.push(i / seg, 1 - r / rings);
+      }
+    }
+    for (let r = 0; r < rings; r++) {
+      for (let i = 0; i < seg; i++) {
+        const a = r * (seg + 1) + i, b = a + seg + 1;
+        idx.push(a, a + 1, b + 1, a, b + 1, b);
+      }
+    }
+    this[key] = this.makeMesh(pos, nor, uv, idx);
+    return this[key];
   },
 
   drawMesh(m, uvScale) {

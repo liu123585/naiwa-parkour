@@ -262,6 +262,14 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 @keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
 
 /* 小屏适配 */
+@media (max-height:860px){
+  .menu-inner{gap:6px;padding-top:46px;padding-bottom:76px}
+  .menu-hero{height:min(26vh,214px);width:min(26vh,214px)}
+  .logo{font-size:clamp(30px,7.2vw,46px)}
+  .logo-sub{font-size:10px;letter-spacing:2px}
+  .btn-xl{padding:13px 34px;font-size:20px}
+  .stat-pill{padding:6px 12px;font-size:12px}
+}
 @media (max-height:640px){
   .menu-hero{height:min(26vh,210px);width:min(26vh,210px)}
   .logo{font-size:clamp(32px,9vw,48px)}

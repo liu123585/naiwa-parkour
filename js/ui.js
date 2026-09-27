@@ -294,7 +294,16 @@ const UI = {
     const hp = h * 0.80;
     const laughing = (Math.sin(time * 0.7) > 0.55) ? 1 : 0;
     const port = (typeof ART !== 'undefined' && ART.portrait) ? ART.portrait(ch.skin) : null;
-    if (port) {
+    const t3 = (typeof Chars3D !== 'undefined' && Chars3D.thumbs) ? Chars3D.thumbs[ch.skin] : null;
+    if (t3) {
+      // 场上同款 3D 模型（保证封面就是游戏里那只）
+      const s = Math.min(w * 0.98 / t3.width, h * 1.0 / t3.height);
+      const dw = t3.width * s, dh = t3.height * s;
+      c.save();
+      c.translate(w / 2 + Math.sin(time * 1.3) * 3, h * 0.99 + bounce * h);
+      c.drawImage(t3, -dw / 2, -dh, dw, dh);
+      c.restore();
+    } else if (port) {
       // AI 立绘：轻微呼吸 + 摇摆
       const w2 = hp * (port.width / port.height);
       const sway = Math.sin(time * 1.6) * 0.012;

@@ -362,6 +362,14 @@ const CharArt = {
     const c = canvas.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
+    // 首选：场上同款真 3D 模型渲染出来的缩略图（保证菜单/商店和游戏里长得一样）
+    const t3 = (typeof Chars3D !== 'undefined' && Chars3D.thumbs) ? Chars3D.thumbs[skin] : null;
+    if (t3) {
+      const s = Math.min(w / t3.width, h * 1.02 / t3.height);
+      const dw = t3.width * s, dh = t3.height * s;
+      c.drawImage(t3, (w - dw) / 2, h * 0.99 - dh, dw, dh);
+      return;
+    }
     // 地面阴影
     const g = c.createRadialGradient(w / 2, h * 0.95, 1, w / 2, h * 0.95, w * 0.34);
     g.addColorStop(0, 'rgba(0,0,0,.22)'); g.addColorStop(1, 'rgba(0,0,0,0)');
