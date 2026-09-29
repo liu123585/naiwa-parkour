@@ -11,9 +11,29 @@
 
 ## 在线游玩
 
-- 部署后访问站点根目录即可（推荐 GitHub 仓库 → EdgeOne 国内版连接仓库自动构建部署）
-- 本地：`node tools/serve.js 8899`，然后开 `http://localhost:8899`
-  （直接双击 `index.html` 也能跑，但本地文件协议下部分浏览器会拦 ES 模块）
+**https://naiwa-parkour-xunozih0.edgeone.cool**
+
+本地跑：`node tools/serve.js 8899`，然后开 `http://localhost:8899`
+
+## 部署
+
+线上跑在 **EdgeOne Pages（国内站）**，项目 `naiwa-parkour` / ID `makers-fslmnfenvrcn`。
+
+⚠️ 注意：这个项目是**直传（direct upload）类型**，不是 Git 连接类型——
+**推 GitHub 不会触发自动部署**，改完要手动跑一次：
+
+```bash
+git push origin main                  # 1. 先把代码推到 GitHub（留个版本）
+PAGES_SOURCE=skills edgeone makers deploy   # 2. 再直传到 EdgeOne（production 环境）
+```
+
+`edgeone` CLI 全局已装（当前 1.6.33，要求 ≥ 1.2.30），账号已登录。
+部署会输出一行 `EDGEONE_DEPLOY_URL=`，里面带 `?eo_token=...` 参数——
+**这串参数不能截断**，但实测去掉 token 也能正常访问，稳定地址就是上面那个域名。
+
+CLI 自动忽略 `node_modules/`，并遵循 `.gitignore`（所以 `shots/`、`.edgeone/` 不会被打包上传）。
+云端排行榜边缘函数在 `functions/api/rank.js`，路由 `/api/rank`；
+KV 未绑定时返回 `{"ok":false,"error":"KV 未绑定"}`，前端会自动退回本机记录。
 
 ## 玩法
 

@@ -1,25 +1,21 @@
 {
   "name": "naiwa-parkour",
-  "version": "1.0.0",
-  "description": "一个纯前端（HTML5 + Canvas，无框架、无外部素材）的 3 跑道无尽跑酷网页游戏，玩法高仿《地铁跑酷》，\r 主角是 2026 年爆火的网络迷因「奶蛙」（奶龙的 AI 变异体：黄桃罐头色巨头、四肢黝黑、魔性大笑），\r 并加入东北雨姐、疯狂小杨哥等网红卡通戏仿角色供玩家解锁使用。",
-  "main": "index.js",
+  "version": "3.0.0",
+  "description": "捏捏跑酷 PINCH RUN —— 纯前端 3 跑道无尽跑酷网页游戏。玩具厂倒闭那晚，车间里没做完的小家伙全跑了。角色、场景、音效全部代码程序化生成，不含任何外部素材文件。",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "serve": "node tools/serve.js 8899",
+    "test": "node tools/selftest.js",
+    "deploy": "edgeone makers deploy"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/liu123585/naiwa-parkour.git"
   },
-  "keywords": [],
-  "author": "",
+  "homepage": "https://naiwa-parkour-xunozih0.edgeone.cool",
   "license": "ISC",
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/liu123585/naiwa-parkour/issues"
-  },
-  "homepage": "https://github.com/liu123585/naiwa-parkour#readme",
-  "dependencies": {
-    "playwright-core": "^1.63.0",
-    "tencentcloud-sdk-nodejs-ai3d": "^4.1.310"
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }
