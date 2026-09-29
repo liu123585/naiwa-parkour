@@ -1,28 +1,14 @@
 /* =========================================================
-   奶蛙跑酷 · AI 美术素材管线
-   —— 把 AI 生成的角色图（纯洋红背景）自动抠图、切片，变成游戏内可用的帧
-   支持：立绘（正视图）、跑步精灵图（背视图多帧）
+   捏捏跑酷 · 美术素材管线（已停用）
+   —— 本作角色与场景全部由代码程序化生成，不再使用任何外部图片素材。
+   manifest 保持为空：ART.has() 恒为 false，2D 绘制走 CharArtAPI，
+   缩略图走 Chars3D.thumbs（场上同款 3D 模型离屏渲染）。
    ========================================================= */
 'use strict';
 
 const ART = {
   BASE: 'art/',
-  /* 每个角色：p = 立绘，r = 跑步精灵图（AI 生成后抠图切片） */
-  manifest: {
-    naiwa: { p: 'naiwa-portrait.png', r: 'naiwa-run.png' },
-    nailong: { p: 'nailong-portrait.png', r: 'nailong-run.png' },
-    yujie: { p: 'yujie-portrait.png', r: 'yujie-run.png' },
-    xiaoyang: { p: 'xiaoyang-portrait.png', r: 'xiaoyang-run.png' },
-    zhangtongxue: { p: 'zhangtongxue-portrait.png', r: 'zhangtongxue-run.png' },
-    liziqi: { p: 'liziqi-portrait.png', r: 'liziqi-run.png' },
-    liugenhong: { p: 'liugenhong-portrait.png', r: 'liugenhong-run.png' },
-    donglaoshi: { p: 'donglaoshi-portrait.png', r: 'donglaoshi-run.png' },
-    goose: { p: 'goose-portrait.png', r: 'goose-run.png' },
-    cybernaiwa: { p: 'cybernaiwa-portrait.png', r: 'cybernaiwa-run.png' },
-    inspector: { p: 'inspector-portrait.png', r: 'inspector-run.png' },
-    dog: { p: 'dog-portrait.png', r: 'dog-run.png' },
-    bull: { p: null, r: 'bull-run.png' },
-  },
+  manifest: {},
   /* 场景贴图 */
   textures: {
     graffiti: 'tex-graffiti.png',

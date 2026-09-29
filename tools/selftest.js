@@ -1,5 +1,5 @@
 /* =========================================================
-   奶蛙跑酷 · headless 自测脚本（node tools/selftest.js）
+   捏捏跑酷 · headless 自测脚本（node tools/selftest.js）
    用 mock 的 canvas / DOM / localStorage 跑完整游戏循环，
    用于在没有浏览器的环境下发现运行时错误与逻辑异常。
    ========================================================= */
@@ -9,8 +9,10 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['js/config.js', 'js/world.js', 'js/audio.js', 'js/artwork.js', 'js/chars.js',
-  'js/gl3d.js', 'js/draw.js', 'js/chars3d.js', 'js/render3d.js', 'js/ui.js', 'js/panels.js', 'js/game.js'];
+/* 加载顺序与 index.html 保持一致（不含 vendor/three.min.js：
+   无头环境没有 WebGL，游戏会自动走 Canvas 2D 回退路径） */
+const FILES = ['js/config.js', 'js/audio.js', 'js/world.js', 'js/artwork.js', 'js/chars.js', 'js/draw.js',
+  'js/pinchchars.js', 'js/pinch3d.js', 'js/ui.js', 'js/panels.js', 'js/game.js'];
 
 /* ---------------- mock 2D 上下文 ---------------- */
 let ops = 0;
@@ -165,9 +167,14 @@ const test = `
   // 商店逻辑
   T('shop buy', function () {
     Store.data.coins = 999999;
-    UI.buyChar('yujie');
-    if (Store.data.chars.indexOf('yujie') < 0) throw new Error('buy failed');
-    if (Store.data.char !== 'yujie') throw new Error('equip failed');
+    const paid = CHARS.filter(c => c.price > 0)[0] || CHARS[0];
+    const before = Store.data.chars.join('|');
+    UI.buyChar(paid.id);
+    if (Store.data.chars.indexOf(paid.id) < 0) {
+      throw new Error('buy failed :: id=' + paid.id + ' before=' + before + ' after=' + Store.data.chars.join('|') +
+        ' coins=' + Store.data.coins + ' price=' + paid.price);
+    }
+    if (Store.data.char !== paid.id) throw new Error('equip failed');
     UI.buySkill('magnet'); UI.buySkill('magnet');
     if (Store.data.skills.magnet !== 2) throw new Error('skill failed');
     CHARS.forEach(function (c) { UI.buyChar(c.id); });
@@ -361,7 +368,7 @@ const test = `
 `;
 
 const result = vm.runInContext(test, context, { filename: 'selftest-body.js' });
-console.log('======= 奶蛙跑酷 自测报告 =======');
+console.log('======= 捏捏跑酷 自测报告 =======');
 result.notes.forEach(n => console.log(n));
 if (result.errors.length) {
   console.log('\n!!! 失败 ' + result.errors.length + ' 项：');

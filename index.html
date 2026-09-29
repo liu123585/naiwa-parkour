@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#ffd34d">
-<meta name="description" content="奶蛙跑酷 - 魔性奶蛙领衔的地铁跑酷高仿小游戏，左右变道、跳栏滑铲、悬浮板、喷射背包，还有东北雨姐等网红角色等你解锁！">
+<meta name="theme-color" content="#1b2b23">
+<meta name="description" content="捏捏跑酷 PINCH RUN —— 玩具厂倒闭那晚，车间里没做完的小家伙全跑了。三条道、变道跳跃滑铲，13 个手工材料做的原创角色等你解锁。">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>奶蛙跑酷 · NAWA RUN</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ffd34d'/><circle cx='11' cy='13' r='4' fill='%23222'/><circle cx='21' cy='13' r='4' fill='%23222'/><path d='M7 21q9 8 18 0' stroke='%23222' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+<title>捏捏跑酷 · PINCH RUN</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23e08a4b'/><circle cx='11' cy='13' r='4.2' fill='%23fdfaf3'/><circle cx='21.5' cy='13.6' r='4.2' fill='%23fdfaf3'/><circle cx='11' cy='13.4' r='2.1' fill='%232b2622'/><circle cx='21.5' cy='14' r='2.1' fill='%232b2622'/><path d='M11 23q5 3.6 10 0' stroke='%232b2622' stroke-width='2.6' fill='none' stroke-linecap='round'/></svg>">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -49,19 +49,19 @@
   <!-- ============ 主菜单 ============ -->
   <div id="screenMenu" class="screen">
     <div class="menu-bg-deco"></div>
-    <nav class="top-nav">
-      <button class="top-nav-btn" data-open="maps"><i class="ico ico-map"></i><span>世界地图</span></button>
-      <button class="top-nav-btn" data-open="codex"><i class="ico ico-book"></i><span>障碍图鉴</span></button>
-      <button class="top-nav-btn" data-open="path"><i class="ico ico-path"></i><span>挑战之路</span></button>
-      <button class="top-nav-btn" data-open="outfits"><i class="ico ico-shirt"></i><span>服装商城</span></button>
-      <button class="top-nav-btn" data-open="rank"><i class="ico ico-rank"></i><span>排行榜</span></button>
-      <button class="top-nav-btn" data-open="settings"><i class="ico ico-gear"></i><span>设置</span></button>
-    </nav>
     <div class="menu-inner">
+      <nav class="top-nav">
+        <button class="top-nav-btn" data-open="maps"><i class="ico ico-map"></i><span>出逃路线</span></button>
+        <button class="top-nav-btn" data-open="codex"><i class="ico ico-book"></i><span>障碍图鉴</span></button>
+        <button class="top-nav-btn" data-open="path"><i class="ico ico-path"></i><span>挑战之路</span></button>
+        <button class="top-nav-btn" data-open="chars"><i class="ico ico-shirt"></i><span>皮肤商城</span></button>
+        <button class="top-nav-btn" data-open="rank"><i class="ico ico-rank"></i><span>排行榜</span></button>
+        <button class="top-nav-btn" data-open="settings"><i class="ico ico-gear"></i><span>设置</span></button>
+      </nav>
       <div class="logo-wrap">
-        <div class="logo-sub">魔性奶蛙领衔 · 三跑道狂奔</div>
-        <h1 class="logo">奶蛙跑酷</h1>
-        <div class="logo-en">N A I W A &nbsp; R U N</div>
+        <div class="logo-sub">手工车间出品 · 三跑道出逃</div>
+        <h1 class="logo">捏捏跑酷</h1>
+        <div class="logo-en">P I N C H &nbsp; R U N</div>
       </div>
 
       <div class="menu-hero">
@@ -81,19 +81,13 @@
 
       <div class="menu-btns">
         <button id="btnPlay" class="btn btn-primary btn-xl">点击开跑 ▶</button>
-        <div class="menu-sub-btns">
-          <button id="btnChars" class="btn">角色形象</button>
-          <button id="btnMissions" class="btn">任务</button>
-          <button id="btnSettings" class="btn">设置</button>
-        </div>
       </div>
 
       <div class="menu-tip" id="menuTip"></div>
-      <div class="menu-foot">操作：← → 变道 · ↑ 跳 · ↓ 滑铲 · 空格 悬浮板 · P 暂停（手机可滑动屏幕或点按钮）</div>
     </div>
     <nav class="bottom-nav">
-      <button class="bn-btn" data-open="outfits"><i class="ico ico-shirt"></i><span>商城</span></button>
-      <button class="bn-btn" data-open="chars"><i class="ico ico-user"></i><span>形象</span></button>
+      <button class="bn-btn" data-open="chars"><i class="ico ico-shirt"></i><span>皮肤</span></button>
+      <button class="bn-btn" data-open="codex"><i class="ico ico-book"></i><span>图鉴</span></button>
       <button class="bn-play" id="btnPlay2"><i class="ico ico-play"></i><span>开跑</span></button>
       <button class="bn-btn" data-open="missions"><i class="ico ico-task"></i><span>任务</span></button>
       <button class="bn-btn" data-open="join"><i class="ico ico-mail"></i><span>加入我们</span></button>
@@ -104,7 +98,7 @@
   <div id="screenChars" class="screen hidden">
     <div class="panel">
       <div class="panel-head">
-        <h2>角色商店</h2>
+        <h2>皮肤商城</h2>
         <div class="panel-coins"><i class="ico ico-coin"></i><b id="charsCoins">0</b></div>
         <button class="panel-close" data-close>&times;</button>
       </div>
@@ -113,7 +107,7 @@
         <button class="tab" data-tab="skills">技能升级</button>
       </div>
       <div class="panel-body" id="charsBody"></div>
-      <div class="panel-note">角色形象均为卡通戏仿演绎，仅供娱乐。</div>
+      <div class="panel-note">全部角色与皮肤均为原创设计，手工车间出品。</div>
     </div>
   </div>
 
@@ -133,11 +127,11 @@
     </div>
   </div>
 
-  <!-- ============ 世界地图 ============ -->
+  <!-- ============ 出逃路线 ============ -->
   <div id="screenMaps" class="screen hidden">
     <div class="panel">
       <div class="panel-head">
-        <h2>世界巡游</h2>
+        <h2>出逃路线</h2>
         <div class="panel-coins"><i class="ico ico-coin"></i><b id="mapsCoins">0</b></div>
         <button class="panel-close" data-close>&times;</button>
       </div>
@@ -230,8 +224,9 @@
         <div class="panel-sep"></div>
         <button class="btn btn-danger btn-block" id="btnWipe">清空存档（金币/角色/记录）</button>
         <div class="about-text">
-          <b>奶蛙跑酷</b> v1.0 · 纯前端 HTML5 游戏，无后端、无第三方素材，音效由 Web Audio 实时合成。<br>
-          灵感来源：地铁跑酷玩法 + 网络迷因「奶蛙」。
+          <b>捏捏跑酷</b> v2.0 · 纯前端 HTML5 游戏，无后端。角色与场景全部由代码程序化生成，没有一张外部贴图、没有一个外部模型，音效由 Web Audio 实时合成。<br>
+          世界观：玩具厂倒闭那晚，车间里没做完的小家伙全跑了。它们抢下最后一条出厂传送带，后面追着来封箱的打包机。<br>
+          玩法灵感来源：经典三跑道跑酷。
         </div>
       </div>
     </div>
@@ -286,19 +281,26 @@
   <!-- ============ 加载 ============ -->
   <div id="boot" class="boot">
     <div class="boot-frog"><span></span><span></span></div>
-    <div class="boot-text">奶蛙正在热身…</div>
+    <div class="boot-text">小家伙们正在热身…</div>
+  </div>
+
+  <!-- ============ 横屏提示 ============ -->
+  <div id="rotate">
+    <div class="rotate-phone"><i></i></div>
+    <div class="rotate-title">请旋转手机</div>
+    <div class="rotate-sub">竖屏才能开跑哦</div>
   </div>
 </div>
 
+<script src="vendor/three.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
-<script src="js/gl3d.js"></script>
 <script src="js/world.js"></script>
 <script src="js/artwork.js"></script>
 <script src="js/chars.js"></script>
 <script src="js/draw.js"></script>
-<script src="js/chars3d.js"></script>
-<script src="js/render3d.js"></script>
+<script src="js/pinchchars.js"></script>
+<script src="js/pinch3d.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/game.js"></script>
@@ -307,10 +309,10 @@
   function boot() {
     try {
       Game.init(document.getElementById('gl'));
-      // 启用 3D 渲染（失败则自动回退到 2D）
+      // 启用 Three.js 3D 渲染（失败则自动回退到 2D）
       var glCanvas = document.getElementById('gl3d');
-      if (glCanvas && typeof Render3D !== 'undefined' && Render3D.init(glCanvas)) {
-        Object.assign(Renderer, Render3D.api);
+      if (glCanvas && typeof Pinch3D !== 'undefined' && Pinch3D.init(glCanvas)) {
+        Object.assign(Renderer, Pinch3D.api);
         Renderer.use3D = true;
         document.getElementById('gl').classList.add('overlay2d');
       }
@@ -331,6 +333,9 @@
       // 调试参数：?dev=run 直接开跑，god=1 无敌，theme=night 指定天气，warp=600 快进帧数
       var qp = new URLSearchParams(location.search);
       if (qp.get('delay')) { window.__devDelay = parseInt(qp.get('delay'), 10) || 900; }
+      // ?q=high 锁定画质；?noperf 关掉自适应降档（软件渲染下截图用，保证投影还在）
+      if (qp.get('q')) { Store.data.settings.quality = qp.get('q'); Renderer.quality = qp.get('q'); }
+      if (qp.has('noperf') && typeof Pinch3D !== 'undefined') Pinch3D.noAutoPerf = true;
       if (qp.has('dev') || qp.has('god') || qp.has('theme') || qp.has('chars') || qp.has('panel') || qp.has('missions') || qp.has('skin')) {
         setTimeout(function () {
           if (qp.has('chars')) { UI.openPanel('chars'); return; }

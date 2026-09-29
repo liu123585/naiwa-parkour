@@ -1,5 +1,5 @@
 /* =========================================================
-   奶蛙跑酷 · 面板系统（世界地图 / 障碍图鉴 / 挑战之路 / 服装商城 / 排行榜 / 加入我们）
+   捏捏跑酷 · 面板系统（出逃路线 / 障碍图鉴 / 挑战之路 / 服装商城 / 排行榜 / 加入我们）
    ========================================================= */
 'use strict';
 
@@ -15,7 +15,7 @@ const Panels = {
       outfitBody: q('outfitBody'), outfitCoins: q('outfitCoins'), outfitTabs: q('outfitTabs'),
       rankBody: q('rankBody'), joinBody: q('joinBody'),
     };
-    this.outfitSkin = Store.data.char || 'naiwa';
+    this.outfitSkin = Store.data.char || (typeof DEFAULT_SKIN !== 'undefined' ? DEFAULT_SKIN : 'ni');
     this.buildModePick();
     this.buildDiffPick();
     this.refreshMenuNow();
@@ -81,7 +81,7 @@ const Panels = {
       b.title = md.desc;
       b.addEventListener('click', () => {
         Store.data.mode = md.id;
-        if (md.map) Store.data.map = md.map;          // 限时挑战固定埃及地图
+        if (md.map) Store.data.map = md.map;          // 限时挑战会锁定到指定地图
         Store.save();
         Sound.click();
         this.buildModePick();
@@ -96,11 +96,12 @@ const Panels = {
     const m = World.map(Store.data.map), d = World.diff(Store.data.difficulty);
     const md = MODES.filter(x => x.id === (Store.data.mode || 'endless'))[0] || MODES[0];
     const best = ((Store.data.bestByMap[m.id] || {})[d.id]) || 0;
-    this.el.menuNow.innerHTML = md.name + ' · 地图 <b>' + m.name + '</b> · 难度 <b>' + d.name +
-      '</b> · 记录 ' + best + '　<span style="opacity:.7">（点上方「世界地图」切换）</span>';
+    /* 地图名统一四字，一行能放下：模式 · 地图 · 难度 · 纪录 */
+    this.el.menuNow.innerHTML = md.name + ' · <b>' + m.name + '</b> · ' + d.name +
+      ' · 纪录 ' + best;
   },
 
-  /* ---------------- 世界地图 ---------------- */
+  /* ---------------- 出逃路线 ---------------- */
   buildMaps() {
     const box = this.el.mapsBody;
     if (!box) return;
@@ -456,7 +457,7 @@ const Panels = {
       d.list.forEach((r, i) => {
         const row = document.createElement('div');
         row.className = 'rank-row' + (i === 0 ? ' top1' : '');
-        row.innerHTML = '<span class="rk">' + (i + 1) + '</span><span>' + String(r.name || '奶蛙玩家') +
+        row.innerHTML = '<span class="rk">' + (i + 1) + '</span><span>' + String(r.name || '路过的') +
           '<span style="opacity:.6"> · ' + Math.floor(r.dist || 0) + 'm</span></span><b>' + r.score + '</b>';
         cloudBox.appendChild(row);
       });
@@ -517,7 +518,7 @@ const Panels = {
     const info = document.createElement('div');
     info.className = 'codex-desc';
     info.style.marginTop = '8px';
-    info.textContent = '奶蛙跑酷 · 自研引擎版本；角色形象为卡通戏仿演绎，仅供娱乐。';
+    info.textContent = '捏捏跑酷 · Three.js 渲染；角色与场景全部由代码程序化生成，不含任何外部素材。';
     box.appendChild(info);
   },
 };

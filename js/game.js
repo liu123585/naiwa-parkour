@@ -1,5 +1,5 @@
 /* =========================================================
-   奶蛙跑酷 · 游戏主逻辑
+   捏捏跑酷 · 游戏主逻辑
    ========================================================= */
 'use strict';
 
@@ -51,11 +51,11 @@ const Game = {
     Renderer.resize();
   },
 
-  charDef() { return CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa; },
+  charDef() { return CHAR_MAP[Store.data.char] || CHAR_MAP[DEFAULT_SKIN]; },
 
   /* ================= 开局 / 重置 ================= */
   reset() {
-    // 难度 + 世界地图（高仿：三档难度、多地巡游）
+    // 难度 + 出逃路线（三档难度、多地巡游）
     const dm = (typeof World !== 'undefined') ? World.cur() : { diff: { speedStart: 28, speedMax: 48, accel: 0.53, obstacleRate: 1, coinRate: 1, scoreMul: 1, name: '普通' }, map: null };
     this.mode = (typeof MODES !== 'undefined' && Store.data.mode) ? Store.data.mode : 'endless';
     const modeDef = (typeof MODES !== 'undefined') ? MODES.filter(m => m.id === this.mode)[0] : null;
@@ -87,7 +87,7 @@ const Game = {
   start() {
     this.reset();
     this.state = 'run';
-    // 开局自带道具（李子柒）
+    // 角色自带的"开局道具"（见 CHARS 里的 starter 标记）
     const ch = this.charDef();
     if (ch && ch.p.starter) this.grantPower(Utils.pick(POWERS).id, true);
     // 悬浮板库存
@@ -266,12 +266,10 @@ const Game = {
     /* ---- 生成 ---- */
     while (this.nextZ < this.travel + CFG.FAR * 0.85) this.genNext();
 
-    /* ---- 清理 ---- */
+    /* ---- 清理（就地回收进对象池，不新建数组） ---- */
     const cut = this.travel - CFG.CAM_BACK - 14;
-    if (this.objs.length > 0 && this.objs[0].worldZ + (this.objs[0].len || 0) < cut) {
-      this.objs = this.objs.filter(o => o.worldZ + (o.len || 0) > cut);
-    } else if (this.objs.length > 260) {
-      this.objs = this.objs.filter(o => o.worldZ + (o.len || 0) > cut);
+    if ((this.objs.length > 0 && this.objs[0].worldZ + (this.objs[0].len || 0) < cut) || this.objs.length > 260) {
+      this._sweepObjs(cut);
     }
 
     /* ---- 移动列车 / 碰撞 ---- */
@@ -622,26 +620,60 @@ const Game = {
     this.shake = Math.max(this.shake, 0.25);
   },
 
+  /* ================= 对象池 =================
+     障碍 / 金币 / 道具 / 粒子全部复用，避免长时间跑图时频繁分配回收造成抖动 */
+  _pool: { objs: [], parts: [] },
+  _take(kind) {
+    const p = this._pool[kind];
+    const o = p.length ? p.pop() : {};
+    for (const k in o) delete o[k];
+    return o;
+  },
+  _give(kind, o) {
+    const p = this._pool[kind];
+    if (p.length < 800) p.push(o);
+  },
+  /* 就地回收过期物体（替代 filter，不产生新数组） */
+  _sweepObjs(cut) {
+    const a = this.objs; let w = 0;
+    for (let i = 0; i < a.length; i++) {
+      const o = a[i];
+      if (o.worldZ + (o.len || 0) > cut) a[w++] = o;
+      else this._give('objs', o);
+    }
+    a.length = w;
+  },
+  /* 按条件回收（复活时清理身边障碍用） */
+  _removeObjs(pred) {
+    const a = this.objs; let w = 0;
+    for (let i = 0; i < a.length; i++) {
+      const o = a[i];
+      if (pred(o)) this._give('objs', o);
+      else a[w++] = o;
+    }
+    a.length = w;
+  },
+
   /* ================= 粒子 ================= */
   spawnBurst(x, y, n, color, spread) {
     spread = spread || 0.6;
     for (let i = 0; i < n; i++) {
-      this.parts.push({
-        x: x + Utils.rand(-0.25, 0.25), y: y + Utils.rand(-0.2, 0.2), z: this.travel + Utils.rand(-0.3, 0.5),
-        vx: Utils.rand(-spread, spread) * 3, vy: Utils.rand(0.4, 2.4) * spread * 2, vz: Utils.rand(-1, 2.2),
-        r: Utils.rand(0.05, 0.12), life: Utils.rand(0.3, 0.7), max: 0.7, color: color, shape: 'dot',
-      });
+      const pt = this._take('parts');
+      pt.x = x + Utils.rand(-0.25, 0.25); pt.y = y + Utils.rand(-0.2, 0.2); pt.z = this.travel + Utils.rand(-0.3, 0.5);
+      pt.vx = Utils.rand(-spread, spread) * 3; pt.vy = Utils.rand(0.4, 2.4) * spread * 2; pt.vz = Utils.rand(-1, 2.2);
+      pt.r = Utils.rand(0.05, 0.12); pt.life = Utils.rand(0.3, 0.7); pt.max = 0.7; pt.color = color; pt.shape = 'dot';
+      this.parts.push(pt);
     }
   },
   spawnDust(n) {
     const p = this.player;
     if (p.y > 0.4) return;
     for (let i = 0; i < n; i++) {
-      this.parts.push({
-        x: p.x + Utils.rand(-0.3, 0.3), y: 0.05, z: this.travel - 0.4 + Utils.rand(-0.3, 0.3),
-        vx: Utils.rand(-1, 1), vy: Utils.rand(0.6, 1.8), vz: Utils.rand(-2.5, -0.5),
-        r: Utils.rand(0.05, 0.1), life: 0.35, max: 0.35, color: 'rgba(220,215,200,.85)', shape: 'dot',
-      });
+      const pt = this._take('parts');
+      pt.x = p.x + Utils.rand(-0.3, 0.3); pt.y = 0.05; pt.z = this.travel - 0.4 + Utils.rand(-0.3, 0.3);
+      pt.vx = Utils.rand(-1, 1); pt.vy = Utils.rand(0.6, 1.8); pt.vz = Utils.rand(-2.5, -0.5);
+      pt.r = Utils.rand(0.05, 0.1); pt.life = 0.35; pt.max = 0.35; pt.color = 'rgba(220,215,200,.85)'; pt.shape = 'dot';
+      this.parts.push(pt);
     }
   },
   spawnJetCoin() {
@@ -655,12 +687,16 @@ const Game = {
     for (let i = ps.length - 1; i >= 0; i--) {
       const pt = ps[i];
       pt.life -= dt;
-      if (pt.life <= 0) { ps.splice(i, 1); continue; }
+      if (pt.life <= 0) { this._give('parts', pt); ps.splice(i, 1); continue; }
       pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.z += pt.vz * dt;
       pt.vy -= 3.2 * dt;
       if (pt.y < 0.02) { pt.y = 0.02; pt.vy *= -0.3; }
     }
-    if (ps.length > 260) ps.splice(0, ps.length - 260);
+    if (ps.length > 260) {
+      const over = ps.length - 260;
+      for (let i = 0; i < over; i++) this._give('parts', ps[i]);
+      ps.splice(0, over);
+    }
   },
 
   /* ================= 关卡生成 ================= */
@@ -682,13 +718,19 @@ const Game = {
   },
 
   addCoin(worldZ, x, y) {
-    this.objs.push({ kind: 'coin', worldZ: worldZ, x: x, y: y, spin: Math.random() * 6.28, taken: false });
+    const o = this._take('objs');
+    o.kind = 'coin'; o.worldZ = worldZ; o.x = x; o.y = y; o.spin = Math.random() * 6.28; o.taken = false;
+    this.objs.push(o);
   },
   addPower(worldZ, x, y, kind) {
-    this.objs.push({ kind: 'power', worldZ: worldZ, x: x, y: y || 1.1, kind2: kind, t: Math.random() * 6, seed: Math.random() * 6, taken: false });
+    const o = this._take('objs');
+    o.kind = 'power'; o.worldZ = worldZ; o.x = x; o.y = y || 1.1; o.kind2 = kind;
+    o.t = Math.random() * 6; o.seed = Math.random() * 6; o.taken = false;
+    this.objs.push(o);
   },
   addObstacle(type, lane, extra) {
-    const base = { kind: 'obstacle', otype: type, worldZ: this.nextZ, x: Utils.laneX(lane) };
+    const base = this._take('objs');
+    base.kind = 'obstacle'; base.otype = type; base.worldZ = this.nextZ; base.x = Utils.laneX(lane);
     const D = {
       barrier: { hw: 0.95, len: 0.55, y0: 0, y1: 1.05 },
       dumpster: { hw: 0.84, len: 1.55, y0: 0, y1: 1.30 },
@@ -702,10 +744,10 @@ const Game = {
   },
   addTrain(worldZ, lane, len, h, opts) {
     const colors = ['#d94f3d', '#3f7fd9', '#dfae2b', '#4fae6b', '#8a5fd9', '#b9c2cc', '#e0703f'];
-    const o = Object.assign({
-      kind: 'train', worldZ: worldZ, x: Utils.laneX(lane), hw: 1.07, len: len, h: h,
-      color: Utils.pick(colors),
-    }, opts || {});
+    const o = this._take('objs');
+    o.kind = 'train'; o.worldZ = worldZ; o.x = Utils.laneX(lane); o.hw = 1.07; o.len = len; o.h = h;
+    o.color = Utils.pick(colors);
+    Object.assign(o, opts || {});
     this.objs.push(o);
     return o;
   },
@@ -1060,7 +1102,7 @@ Object.assign(Game, {
     /* 云端排行榜：仅普通难度计入（高仿设计：简单/困难只存本机） */
     if (D.id === 'normal' && sc > 0 && typeof Panels !== 'undefined' && Panels.cloud) {
       if (!save.playerName) {
-        save.playerName = '奶蛙玩家' + Math.floor(1000 + Math.random() * 9000);
+        save.playerName = '路过的' + Math.floor(1000 + Math.random() * 9000);
         Store.save();
       }
       Panels.cloud.submit({
@@ -1089,9 +1131,9 @@ Object.assign(Game, {
     save.coins -= cost;
     save.revives++; this.reviveUsed++;
     Store.save();
-    // 清理身边障碍
+    // 清理身边障碍（回收进对象池）
     const z0 = this.travel + CFG.CAM_BACK, z1 = this.travel + 26;
-    this.objs = this.objs.filter(o => !(o.kind === 'obstacle' && o.worldZ > this.travel - 2 && o.worldZ < this.travel + 30));
+    this._removeObjs(o => o.kind === 'obstacle' && o.worldZ > this.travel - 2 && o.worldZ < this.travel + 30);
     const p = this.player;
     p.y = Math.max(p.y, 0.2); p.vy = 0; p.rollT = 0; p.state = 'run';
     this.invuln = 3.4;

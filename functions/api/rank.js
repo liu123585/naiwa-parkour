@@ -1,4 +1,4 @@
-/* 奶蛙跑酷 · 云端排行榜（EdgeOne Pages 边缘函数 + KV）
+/* 捏捏跑酷 · 云端排行榜（EdgeOne Pages 边缘函数 + KV）
    GET  /api/rank?map=city&diff=normal&limit=20   → { list: [...], ok:true }
    POST /api/rank  {name, score, dist, map, diff} → { ok:true, rank:n, code:'XXXX' }
    说明：KV 未绑定时返回 ok:false，前端自动退回本机记录。 */
@@ -20,7 +20,7 @@ const KEY = 'naiwa_rank_v1';
 const MAX_KEEP = 300;
 
 function cleanName(s) {
-  return String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 12) || '奶蛙玩家';
+  return String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 12) || '捏捏玩家';
 }
 
 export async function onRequest(context) {

@@ -1,6 +1,6 @@
 /* =========================================================
-   奶蛙跑酷 · 内容系统（高仿《奶蛙快跑》的产品结构，代码与美术自研）
-   —— 世界巡游地图 / 难度 / 服装衣橱 / 障碍图鉴 / 挑战之路
+   捏捏跑酷 · 内容系统（代码与美术全部自研，无任何第三方 IP）
+   —— 出逃路线地图 / 难度 / 服装衣橱 / 障碍图鉴 / 挑战之路
    ========================================================= */
 'use strict';
 
@@ -28,18 +28,20 @@ const DIFFICULTIES = [
 /* 三种模式（对齐参考游戏：自由选图 / 单地图无尽 / 限时挑战） */
 const MODES = [
   { id: 'endless', name: '无尽奔跑', desc: '选一张地图一直跑下去，撞两次就被抓' },
-  { id: 'challenge60', name: '60秒挑战', desc: '埃及·金沙秘境，60 秒内跑出最远距离', map: 'egypt', time: 60 },
+  { id: 'challenge60', name: '60秒挑战', desc: '在石膏沙盘上，60 秒内跑出最远距离', map: 'egypt', time: 60 },
 ];
 const DIFF_MAP = {};
 DIFFICULTIES.forEach(d => { DIFF_MAP[d.id] = d; });
 
-/* ---------------- 世界巡游地图 ----------------
-   pal: 叠加到昼夜主题上的色调（hex 混色，mix 为混合强度）
+/* ---------------- 出逃路线地图 ----------------
+   世界观是"倒闭玩具厂的车间"——所以这里不是国家巡游，是车间里和厂区外
+   八块用同样手工材料搭出来的景片。名字统一四字，副标题只写"这景是什么做的"，
+   不写形容词。色调（pal）叠在昼夜主题上，mix 为混合强度。
    prop: 路边装饰物类型；ambient: 环境粒子；unlock: 解锁金币（0=免费）
 ------------------------------------------------ */
 const MAPS = [
   {
-    id: 'city', name: '摩天大楼 · 云端都会', sub: '高楼与霓虹的起点', unlock: 0,
+    id: 'city', name: '纸箱街区', sub: '快递箱摞的楼，晾衣绳从头顶过', unlock: 0,
     prop: 'pylon', ambient: null, mix: 0.35,
     pal: {
       skyTop: '#3f9fe0', skyBot: '#cfeaff', ground: '#7fae6a',
@@ -48,7 +50,7 @@ const MAPS = [
     },
   },
   {
-    id: 'changan', name: '中国古城 · 灯火长安', sub: '红墙灯笼与飞檐', unlock: 0,
+    id: 'changan', name: '红纸夜灯', sub: '红纸糊的墙，灯笼是纽扣串的', unlock: 0,
     prop: 'lantern', ambient: null, mix: 0.75,
     pal: {
       skyTop: '#e0603f', skyBot: '#ffd9a8', ground: '#8a6a4a',
@@ -57,7 +59,7 @@ const MAPS = [
     },
   },
   {
-    id: 'sakura', name: '日本 · 樱色列车', sub: '樱花纷飞的站台', unlock: 600,
+    id: 'sakura', name: '粉纸花台', sub: '粉纸剪的花，一直往下掉', unlock: 600,
     prop: 'sakura', ambient: 'petal', mix: 0.8,
     pal: {
       skyTop: '#7fb6e8', skyBot: '#ffe6f0', ground: '#93a86f',
@@ -66,7 +68,7 @@ const MAPS = [
     },
   },
   {
-    id: 'egypt', name: '埃及 · 金沙秘境', sub: '金字塔与神庙石柱', unlock: 1200,
+    id: 'egypt', name: '石膏沙盘', sub: '石膏倒的金字塔，还没干透', unlock: 1200,
     prop: 'obelisk', ambient: 'sand', mix: 0.8,
     pal: {
       skyTop: '#f0a94b', skyBot: '#ffe6b0', ground: '#d9b878',
@@ -75,7 +77,7 @@ const MAPS = [
     },
   },
   {
-    id: 'brazil', name: '巴西 · 海风狂想', sub: '海岸棕榈与彩绘墙', unlock: 1800,
+    id: 'brazil', name: '木栈海风', sub: '蓝绿颜料刷的墙，风扇对着吹', unlock: 1800,
     prop: 'palm', ambient: 'leaf', mix: 0.75,
     pal: {
       skyTop: '#2fa8d8', skyBot: '#d8f6ff', ground: '#e0c56a',
@@ -84,7 +86,7 @@ const MAPS = [
     },
   },
   {
-    id: 'india', name: '印度 · 粉城巡游', sub: '粉色之城与彩绘穹顶', unlock: 2400,
+    id: 'india', name: '粉墙穹顶', sub: '粉色石膏穹顶，边角掉了漆', unlock: 2400,
     prop: 'dome', ambient: null, mix: 0.78,
     pal: {
       skyTop: '#e07a9a', skyBot: '#ffe2d0', ground: '#c99a6a',
@@ -93,7 +95,7 @@ const MAPS = [
     },
   },
   {
-    id: 'tibet', name: '高原 · 雪山天路', sub: '雪山与经幡', unlock: 3200,
+    id: 'tibet', name: '盐粒雪原', sub: '盐粒堆的雪，经幡是布条', unlock: 3200,
     prop: 'flagpole', ambient: 'snow', mix: 0.7,
     pal: {
       skyTop: '#3f7fd8', skyBot: '#e8f4ff', ground: '#b8c4cc',
@@ -102,7 +104,7 @@ const MAPS = [
     },
   },
   {
-    id: 'cyber', name: '赛博 · 霓虹夜轨', sub: '永远的电竞之夜', unlock: 5000,
+    id: 'cyber', name: '焊台蓝光', sub: '亚克力板和 LED 灯条，通宵没关', unlock: 5000,
     prop: 'neon', ambient: null, mix: 0.85, forceNight: true,
     pal: {
       skyTop: '#0a0f2e', skyBot: '#2a1a5e', ground: '#1d2230',

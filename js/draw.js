@@ -1,5 +1,5 @@
 /* =========================================================
-   奶蛙跑酷 · 伪 3D 渲染引擎（Canvas 2D 透视投影）
+   捏捏跑酷 · 伪 3D 渲染引擎（Canvas 2D 透视投影）
    世界坐标：x 横向 / y 高度(向上) / z 前进方向（相对摄像机）
    ========================================================= */
 'use strict';
@@ -100,15 +100,23 @@ const Renderer = {
   },
 
   /* ---------------- 预渲染精灵（金币/道具） ---------------- */
-  /* ---------------- 场景贴图：AI 涂鸦墙 + 程序化道砟 ---------------- */
+  /* ---------------- 场景贴图：涂鸦墙（仅 2D 回退模式用） + 程序化道砟 ---------------- */
+  /* 涂鸦墙只在 2D 回退渲染时才需要，所以做成惰性加载：
+     3D 模式下 drawWall 不会被调用，这 2.3MB 就完全不下。
+     以前是在 init 里无条件 new Image()，白下一趟。 */
+  ensureGraffiti() {
+    if (this.tex && this.tex.graffiti !== undefined) return;
+    this.tex = this.tex || {};
+    this.tex.graffiti = null;
+    if (typeof Image === 'undefined') return;
+    const im = new Image();
+    im.onload = () => { this.tex.graffiti = im; };
+    im.onerror = () => { this.tex.graffiti = null; };
+    im.src = 'art/tex-graffiti.png';
+  },
+
   loadTex() {
     this.tex = this.tex || {};
-    if (!this.tex.graffiti && typeof Image !== 'undefined') {
-      const im = new Image();
-      im.onload = () => { this.tex.graffiti = im; };
-      im.onerror = () => { this.tex.graffiti = null; };
-      im.src = 'art/tex-graffiti.png';
-    }
     if (!this.tex.gravel && typeof document !== 'undefined') {
       const cv = document.createElement('canvas');
       cv.width = 256; cv.height = 256;
@@ -153,7 +161,7 @@ const Renderer = {
       c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, 32, 0, Math.PI * 2); c.stroke();
       c.fillStyle = '#e8a200'; c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.fill();
       c.fillStyle = '#8a5b00'; c.font = 'bold 30px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText('奶', 0, 2);
+      c.fillText('扣', 0, 2);
     });
     const powers = {
       magnet: { col: '#ff5b5b', col2: '#ff9c9c' }, jet: { col: '#4f9dff', col2: '#a9d1ff' },
@@ -305,6 +313,8 @@ const Renderer = {
   /* ---------------- 地面 / 铁轨 / 侧墙 ---------------- */
   drawGround(theme, travel, nightLight) {
     const c = this.c, W = this.W, H = this.H;
+    /* 2D 回退模式才走这里，涂鸦墙贴图也就在这时候才开始下载 */
+    this.ensureGraffiti();
     const g = c.createLinearGradient(0, this.horizon, 0, H);
     g.addColorStop(0, theme.ballast2); g.addColorStop(0.35, theme.ballast); g.addColorStop(1, theme.ballast2);
     c.fillStyle = g;
@@ -359,7 +369,7 @@ const Renderer = {
         c.fillStyle = wg;
         c.beginPath(); c.moveTo(b1.sx, b1.sy); c.lineTo(t1.sx, t1.sy); c.lineTo(t2.sx, t2.sy); c.lineTo(b2.sx, b2.sy);
         c.closePath(); c.fill();
-        // AI 涂鸦贴图：把整面墙按 z 分段做仿射映射（透视靠分段逼近）
+        // 涂鸦墙贴图：把整面墙按 z 分段做仿射映射（透视靠分段逼近）
         if (this.tex && this.tex.graffiti && !this.fxLow) {
           this.texWallStrip(theme, sgn, travel, wallH);
         }

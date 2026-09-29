@@ -1,5 +1,5 @@
 /* =========================================================
-   奶蛙跑酷 · 界面 / 商店 / 任务 / 成就
+   捏捏跑酷 · 界面 / 商店 / 任务 / 成就
    ========================================================= */
 'use strict';
 
@@ -279,7 +279,7 @@ const UI = {
       // 封面与商店已改用场上同款真 3D 模型渲染，无需再下载几十 MB 的 AI 立绘
       this._artWarm = true;
     }
-    const ch = CHAR_MAP[Store.data.char] || CHAR_MAP.naiwa;
+    const ch = CHAR_MAP[Store.data.char] || CHAR_MAP[DEFAULT_SKIN];
     const cv = this.el.hero;
     const w = cv.clientWidth || 300, h = cv.clientHeight || 300;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -292,7 +292,7 @@ const UI = {
     const laughing = (Math.sin(time * 0.7) > 0.55) ? 1 : 0;
     const port = (typeof ART !== 'undefined' && ART.portrait) ? ART.portrait(ch.skin) : null;
     const t3 = (typeof Chars3D !== 'undefined' && Chars3D.thumbs) ? Chars3D.thumbs[ch.skin] : null;
-    if (t3) {
+    if (t3 && !port) {
       // 场上同款 3D 模型（保证封面就是游戏里那只）
       const s = Math.min(w * 0.98 / t3.width, h * 1.0 / t3.height);
       const dw = t3.width * s, dh = t3.height * s;
@@ -319,14 +319,20 @@ const UI = {
       CharArtAPI.draw(c, ch.skin, pose);
       c.restore();
     }
-    // 飘出的音符/笑声
+    // 站久了会扬起两粒黏土粉尘（原来飘「齁」字那套已经拿掉，跟世界观不搭）
     if (laughing) {
-      c.globalAlpha = 0.85;
-      c.font = 'bold 22px sans-serif';
-      c.fillStyle = '#fff';
-      c.fillText('齁', w * 0.72, h * 0.34 - ((time * 30) % 30));
-      c.fillText('齁', w * 0.20, h * 0.44 - ((time * 26) % 26));
-      c.globalAlpha = 1;
+      c.save();
+      c.fillStyle = '#f2cda2';
+      for (let i = 0; i < 3; i++) {
+        const t2 = (time * 0.55 + i * 0.34) % 1;
+        const px = w * (0.24 + i * 0.26) + Math.sin(time * 1.4 + i * 2) * 7;
+        const py = h * 0.74 - t2 * h * 0.30;
+        c.globalAlpha = 0.45 * (1 - t2);
+        c.beginPath();
+        c.arc(px, py, 2.4 * (1 - t2) + 0.9, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.restore();
     }
     // 提示轮播
     this._tipT += 0.016;
@@ -393,6 +399,10 @@ const UI = {
     const save = Store.data;
     if (save.chars.indexOf(id) >= 0) { save.char = id; Store.save(); Sound.ui(); this.buildChars(); this.refreshCoins(); UI.toast('已选择 ' + ch.name); return; }
     if (save.coins < ch.price) { Sound.deny(); UI.toast('金币不足，还差 ' + (ch.price - save.coins)); return; }
+    // 未解锁：先弹购买确认，确认后再扣金币（无 confirm 环境——如自动化测试——直接放行）
+    if (typeof confirm === 'function' && confirm('花 ' + ch.price + ' 金币解锁皮肤「' + ch.name + '」？') === false) {
+      Sound.ui(); return;
+    }
     save.coins -= ch.price;
     save.chars.push(id);
     save.char = id;
@@ -492,9 +502,11 @@ const UI = {
   bind() {
     const q = (id) => document.getElementById(id);
     q('btnPlay').onclick = () => { Sound.ui(); Sound.resume(); Game.start(); };
-    q('btnChars').onclick = () => this.openPanel('chars');
-    q('btnMissions').onclick = () => this.openPanel('missions');
-    q('btnSettings').onclick = () => this.openPanel('settings');
+    /* 主菜单上的快捷入口已收敛到顶/底导航；这几个 id 若不存在则跳过绑定 */
+    [['btnChars', 'chars'], ['btnMissions', 'missions'], ['btnSettings', 'settings']].forEach(([id, w]) => {
+      const b = q(id);
+      if (b) b.onclick = () => this.openPanel(w);
+    });
     q('btnResume').onclick = () => { Sound.ui(); Game.resume(); };
     q('btnRestart').onclick = () => { Sound.ui(); Game.restart(); };
     q('btnQuit').onclick = () => { Sound.ui(); Game.quitToMenu(); };
@@ -506,8 +518,8 @@ const UI = {
       if (!ok) this.toast('金币不足或已用过复活');
     };
     q('btnShare').onclick = () => {
-      const txt = '我在【奶蛙跑酷】跑了 ' + Math.floor(Game.travel) + ' 米，拿到 ' +
-        Math.floor(Game.score) + ' 分，收集 ' + Game.runCoins + ' 金币。齁齁齁，来比比？';
+      const txt = '【捏捏跑酷】跑了 ' + Math.floor(Game.travel) + ' 米，' +
+        Math.floor(Game.score) + ' 分，捡了 ' + Game.runCoins + ' 个纽扣。手还热着，来比？';
       const done = () => this.toast('成绩已复制，去粘贴分享吧');
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(txt).then(done).catch(() => this.toast(txt));

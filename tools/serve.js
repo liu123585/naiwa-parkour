@@ -35,5 +35,5 @@ http.createServer((req, res) => {
     res.end(buf);
   });
 }).listen(PORT, () => {
-  console.log('奶蛙跑酷 本地服务: http://localhost:' + PORT);
+  console.log('捏捏跑酷 本地服务: http://localhost:' + PORT);
 });
