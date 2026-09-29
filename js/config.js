@@ -260,6 +260,8 @@ const DEFAULT_SAVE = {
   playerName: '',
   cloudId: '',
   cloudBest: 0,
+  cloudSaveCode: '',      // 云端存档的取件码，空=还没存过
+  cloudSavedAt: 0,
   best: 0,
   runs: 0,
   totalDist: 0,

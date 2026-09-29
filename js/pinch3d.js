@@ -89,11 +89,15 @@ const Pinch3D = {
     this.fill.position.set(-8, 6, -6);
     this.scene.add(this.fill);
 
-    /* 静态世界 / 动态物件 / 角色 三个挂载点 */
+    /* 静态世界 / 动态物件 / 角色 三个挂载点。
+       这三个组整体塞进一个 scale.x = -1 的镜像组里，原因见下面 mirrorX 的注释。 */
     this.staticRoot = new THREE.Group();
     this.dynRoot = new THREE.Group();
     this.charRoot = new THREE.Group();
-    this.scene.add(this.staticRoot, this.dynRoot, this.charRoot);
+    this.mirror = new THREE.Group();
+    this.mirror.scale.x = -1;
+    this.mirror.add(this.staticRoot, this.dynRoot, this.charRoot);
+    this.scene.add(this.mirror);
 
     /* 网格池：每帧复用，避免 GC 抖动 */
     this.pool = { all: [], used: 0, root: this.dynRoot };
@@ -252,7 +256,14 @@ const Pinch3D = {
     return m;
   },
 
-  /* ---------------- 主渲染入口 ---------------- */
+  /* ---------------- 主渲染入口 ----------------
+     ⚠️ 关于左右方向（踩过的坑，别改回去）：
+     相机朝 +z 看、+y 朝上时，摄像机的"屏幕右"向量是 cross(up, -forward) = (-1,0,0)，
+     也就是**世界 -x 落在屏幕右边**。但游戏世界和 2D 渲染器（sx = cx + (x-camX)*s）
+     的约定都是"世界 +x 落在屏幕右边"。两边不一致的结果就是：按←角色往屏幕右跑。
+     所以 init 里把三个挂载点整体放进 scale.x = -1 的镜像组，
+     相机 / 灯 / 天空幕布 / proj 这几个不在组里的，x 要手动取负。
+     整体镜像而不是逐个取负，是因为逐个取负会漏掉旋转（绕 y、绕 z 的旋转也要反号）。 */
   wz(zr) { return this.travel + zr - CFG.CAM_BACK; },
 
   api: {
@@ -261,11 +272,12 @@ const Pinch3D = {
     proj(x, y, zr) {
       if (!Pinch3D.ready) return null;
       const p = Pinch3D._v3 || (Pinch3D._v3 = new THREE.Vector3());
-      p.set(x, y, Pinch3D.wz(zr)).project(Pinch3D.camera);
+      /* 场景被镜像过，所以世界 x 对应的渲染坐标要取负 */
+      p.set(-x, y, Pinch3D.wz(zr)).project(Pinch3D.camera);
       const W = Renderer.W, H = Renderer.H;
       if (p.z > 1) return null;
       const d = Pinch3D._depth || (Pinch3D._depth = new THREE.Vector3());
-      d.set(x, y, Pinch3D.wz(zr));
+      d.set(-x, y, Pinch3D.wz(zr));
       const dist = d.distanceTo(Pinch3D.camera.position);
       const focal = (H * 0.5) / Math.tan((CFG.FOV_Y || 62) * Math.PI / 360);
       return {
@@ -307,21 +319,27 @@ const Pinch3D = {
       R.pool.used = 0;
       R.charRoot.clear();
 
-      /* 相机 */
+      /* 相机。注意 x 取负：场景整体被 scale.x=-1 镜像过，
+         相机不在那个组里，要手动镜像才能对上（否则左右反）。
+         -R.camX 而不是 R.camX，配合 proj 里也取负，三者才自洽。 */
       const camZ = travel - CFG.CAM_BACK;
-      R.camera.position.set(R.camX, R.camY, camZ);
+      const mx = -R.camX;
+      R.camera.position.set(mx, R.camY, camZ);
       /* 视线跟着相机走（不再乘 0.5）——乘 0.5 的话视角中心滞后于相机，
          角色会被推到画面边上。 */
-      R.camTarget.set(R.camX, 0.62, camZ + 18);
+      R.camTarget.set(mx, 0.62, camZ + 18);
       R.camera.lookAt(R.camTarget);
       /* 灯跟着相机走，否则跑远了光照会跑偏。
          台灯压到 35° 左右——之前 65° 太陡，影子短到全藏在物体自己底下，
-         等于白开投影；压低之后影子才会横着甩过整条轨道。 */
-      R.key.position.set(R.camX + 11, 7.5, camZ + 5);
-      R.key.target.position.set(R.camX, 0, camZ + 6);
+         等于白开投影；压低之后影子才会横着甩过整条轨道。
+         注意灯的 x 是 mx - 11 / mx + 8（不是 +11 / -8）：灯在世界里位于
+         camX+11，镜像到渲染坐标就是 -(camX+11) = mx-11。写成 mx+11 的话
+         灯会跑到影子的同一侧，影子就变成朝灯甩了。 */
+      R.key.position.set(mx - 11, 7.5, camZ + 5);
+      R.key.target.position.set(mx, 0, camZ + 6);
       R.key.target.updateMatrixWorld();
-      R.fill.position.set(R.camX - 8, 6, camZ - 6);
-      R.fill.target.position.set(R.camX, 0, camZ + 6);
+      R.fill.position.set(mx + 8, 6, camZ - 6);
+      R.fill.target.position.set(mx, 0, camZ + 6);
       R.fill.target.updateMatrixWorld();
 
       /* 天光：不用主题那套蓝（出来就是发白的通用手游天），
@@ -373,16 +391,17 @@ const Pinch3D = {
         R.skyPlane.renderOrder = -100;
         R.scene.add(R.skyPlane);
       }
-      R.skyPlane.position.set(R.camX * 0.3, 24, camZ + 155);
+      R.skyPlane.position.set(mx * 0.3, 24, camZ + 155);
       R.skyPlane.scale.set(460, 210, 1);
 
       /* 光晕直接烘在背景纸上（见上面的暖光带），不再单独摆一个方块 */
 
-      /* 首次进游戏：用场上同款模型渲染菜单缩略图 */
+      /* 首次进游戏：用场上同款模型渲染菜单缩略图。
+         追兵不进商店，所以不用给它们出缩略图。 */
       if (!R._thumbTried && typeof Chars3D !== 'undefined') {
         R._thumbTried = true;
         try {
-          const skins = (typeof CHARS !== 'undefined' ? CHARS.map(c => c.skin) : []).concat(['bull', 'dog']);
+          const skins = (typeof CHARS !== 'undefined' ? CHARS.map(c => c.skin) : []);
           if (Chars3D.buildThumbs(R.canvas3d, skins)) Chars3D.thumbsReady = true;
         } catch (e) { R._thumbTried = false; }
       }

@@ -16,6 +16,10 @@ const TOY_MAT = {
   paper:   { rough: 1.00, metal: 0.00, flat: true,  jitter: 0.022, shiny: 0 },
   yarn:    { rough: 1.00, metal: 0.00, flat: false, jitter: 0.050, shiny: 0 },
   tin:     { rough: 0.40, metal: 0.70, flat: true,  jitter: 0.012, shiny: 42 },
+  /* 铁皮玩具专用：比 tin 弱一档高光。
+     tin 的 specular 系数是 0.57，在暖台灯 + 强天光下会把平面整块打爆成白，
+     侧面看过去一条胳膊一条腿全糊成奶油色，剪影就散了。 */
+  tinToy:  { rough: 0.58, metal: 0.20, flat: true,  jitter: 0.012, shiny: 16 },
   eraser:  { rough: 0.96, metal: 0.00, flat: false, jitter: 0.016, shiny: 0 },
   felt:    { rough: 1.00, metal: 0.00, flat: false, jitter: 0.056, shiny: 0 },
   wood:    { rough: 0.90, metal: 0.00, flat: true,  jitter: 0.020, shiny: 8 },
@@ -444,6 +448,9 @@ function applyPose(rig, pose) {
 
   const swingA = Math.sin(ph);
   const swingB = -swingA;
+  /* 步幅系数：铁皮玩具腿长、关节硬，摆太开会像在跨栏。
+     收窄之后是那种一格一格的小碎步，更像上紧发条的玩具。 */
+  const sw = rig.swing == null ? 1 : rig.swing;
 
   switch (st) {
     case 'jump':
@@ -493,10 +500,10 @@ function applyPose(rig, pose) {
       break;
 
     default: { // run
-      rig.legL.rotation.x = swingA * 0.95;
-      rig.legR.rotation.x = swingB * 0.95;
-      rig.armL.rotation.x = swingB * 0.85;
-      rig.armR.rotation.x = swingA * 0.85;
+      rig.legL.rotation.x = swingA * 0.95 * sw;
+      rig.legR.rotation.x = swingB * 0.95 * sw;
+      rig.armL.rotation.x = swingB * 0.85 * sw;
+      rig.armR.rotation.x = swingA * 0.85 * sw;
       rig.armL.rotation.z = -0.16; rig.armR.rotation.z = 0.16;
       rig.core.rotation.x = -0.13;
       rig.core.position.y = Math.abs(Math.sin(ph)) * 0.035;
@@ -522,19 +529,296 @@ function applyPose(rig, pose) {
   rig.core.position.x += b1 * 0.016;
   rig.core.position.z += b2 * 0.016;
   rig.core.rotation.y += b3 * 0.035;
+
+  /* 铁皮玩具背后的发条钥匙：跟着步态一格一格转，
+     正好卡在定格动画的节拍上（一圈分 6 格，和步态同频）。 */
+  if (rig.spin) {
+    const a = -(step / STOP_STEPS) * Math.PI * 2;
+    for (let i = 0; i < rig.spin.length; i++) rig.spin[i].rotation.z = a;
+  }
 }
 
 /* =========================================================
-   追兵（game.js 用 'bull' / 'dog' 两个 skin 调 drawChar）
+   追兵：铁皮发条检票员 + 他那只铁皮狗
+   ---------------------------------------------------------
+   为什么不走 buildRig：
+   buildRig 是按 CHAR_MAP[skin] 查表的，而 'bull' / 'dog' 根本不在角色表里，
+   于是 `CHAR_MAP[skin] || CHAR_MAP[DEFAULT_SKIN]` 会一路回退成主角泥泥。
+   也就是说——追兵以前其实是主角的换色版，看着当然不对。
+   这里给它们单独建模。
+
+   美术方向还是贴着"玩具厂"这条线：两个都是铁皮印刷玩具，
+   平直的铁皮板、冲压出来的缝、背后一把黄铜发条钥匙、磨掉漆的边角。
    ========================================================= */
+const TIN = {
+  coat:   '#2f4468',   // 制服深蓝
+  coatLt: '#41608c',   // 前襟（比制服亮一档，破开大平面）
+  trous:  '#5d6d88',   // 裤腿——故意比上衣浅，不然从背后看整只人是一团深蓝
+  trim:   '#a8342f',   // 领口 / 袖口 / 项圈
+  brass:  '#d9a441',   // 纽扣 / 帽徽 / 发条钥匙
+  glove:  '#efe9dc',   // 白手套，深色制服上唯一的亮点
+  face:   '#d9c1a0',   // 铁皮脸
+  cap:    '#1e2838',   // 大檐帽
+  capTop: '#39496a',
+  boot:   '#20242c',
+  steel:  '#b6bfc9',
+};
+
+/* 背后那把发条钥匙。z 越小越靠后，所以钥匙环挂在 z = -0.16 那一头。 */
+function buildWindupKey(scale) {
+  const g = new THREE.Group();
+  const brass = toyMat(TIN.brass, 'brass');
+  const stem = mesh(geoCyl('wk_s', 0.030, 0.030, 0.16, 8), brass, 0, 0, -0.08);
+  stem.rotation.x = Math.PI / 2;
+  g.add(stem);
+  g.add(mesh(geoTorus('wk_l', 0.105, 0.030, Math.PI * 2), brass, 0, 0, -0.165));
+  /* 环里那道横梁：没有它就是个铜圈，加了才像发条钥匙 */
+  g.add(mesh(geoBox('wk_b', 0.21, 0.030, 0.030, 0, 0), brass, 0, 0, -0.165));
+  g.scale.setScalar(scale || 1);
+  return g;
+}
+
+/* 检票钳：一把黄铜打孔钳，钳口张着。
+   尺寸一定要压住——第一版给了 1.15 倍，结果钳子跟人一样高，
+   侧面看就是一根金色大棒子戳出屏幕。 */
+function buildTicketPunch(scale) {
+  const g = new THREE.Group();
+  const brass = toyMat(TIN.brass, 'brass');
+  const steel = toyMat(TIN.steel, 'metal');
+  /* 两根手柄，微微叉开 */
+  for (const s of [-1, 1]) {
+    const h = mesh(geoBox('tp_h', 0.050, 0.30, 0.056, 0, 0), brass, s * 0.052, -0.19, 0, true);
+    h.rotation.z = s * 0.17;
+    g.add(h);
+  }
+  /* 铰链 */
+  g.add(mesh(geoCyl('tp_p', 0.052, 0.052, 0.094, 10), steel, 0, -0.03, 0));
+  /* 上下颚：两块斜着的铁片，中间留个口 */
+  for (const s of [-1, 1]) {
+    const jaw = mesh(geoBox('tp_j', 0.080, 0.22, 0.058, 0, 0), brass, 0, 0.115, s * 0.080, true);
+    jaw.rotation.x = -s * 0.38;
+    g.add(jaw);
+  }
+  /* 冲头 */
+  g.add(mesh(geoSphere('tp_t', 0.034, 0.050, 0.034, 0, 0), steel, 0, 0.205, 0.02));
+  g.scale.setScalar(scale || 0.38);
+  return g;
+}
+
+/* ---------------- 检票员：铁皮发条人形 ---------------- */
+function buildInspector(core) {
+  const j = 0.011;                 // 铁皮是冲压出来的，捏痕要轻
+  const sd = 41;
+  const coat = toyMat(TIN.coat, 'tinToy');
+  const coatLt = toyMat(TIN.coatLt, 'tinToy');
+  const trous = toyMat(TIN.trous, 'tinToy');
+  const trim = toyMat(TIN.trim, 'tinToy');
+  const brass = toyMat(TIN.brass, 'brass');
+  const glove = toyMat(TIN.glove, 'tinToy');
+  const faceM = toyMat(TIN.face, 'tinToy');
+  const bootM = toyMat(TIN.boot, 'tinToy');
+  const inkM = toyMat('#241f1a', 'eraser');
+
+  /* ---- 躯干：一块冲压出来的铁皮盒，肩宽收成腰窄 ---- */
+  core.add(mesh(geoBox('ins_t', 0.36, 0.42, 0.25, j, sd), coat, 0, 0.63, 0, true));
+  /* 前襟：比制服亮一档，把胸前一整块大平面破开 */
+  core.add(mesh(geoBox('ins_v', 0.21, 0.31, 0.022, 0, 0), coatLt, 0, 0.665, 0.132));
+  /* 前襟上那排金纽扣——铁皮玩具最标志性的一笔 */
+  for (let i = 0; i < 4; i++) {
+    core.add(mesh(geoCyl('ins_b', 0.023, 0.023, 0.03, 8), brass, 0, 0.775 - i * 0.095, 0.152));
+  }
+  /* 领口 + 领带 */
+  core.add(mesh(geoBox('ins_c', 0.27, 0.07, 0.235, j * 0.5, sd + 1), trim, 0, 0.845, 0.004));
+  core.add(mesh(geoBox('ins_tie', 0.065, 0.19, 0.03, 0, 0), trim, 0, 0.745, 0.146));
+  /* 腰带 + 铜扣 */
+  core.add(mesh(geoBox('ins_bl', 0.375, 0.058, 0.265, 0, 0), toyMat('#1b2740', 'tinToy'), 0, 0.455, 0));
+  core.add(mesh(geoBox('ins_bk', 0.085, 0.07, 0.03, 0, 0), brass, 0, 0.455, 0.142));
+  /* 肩章：两片小铁皮，压在肩线上，别做宽——做宽了就成了横在肩上的一块金牌 */
+  for (const s of [-1, 1]) {
+    core.add(mesh(geoBox('ins_sp', 0.092, 0.028, 0.16, 0, 0), brass, s * 0.172, 0.858, 0));
+  }
+  /* 背后的发条钥匙 */
+  const key = buildWindupKey(1.0);
+  key.position.set(0, 0.68, -0.13);
+  core.add(key);
+
+  /* ---- 头 ----
+     铁皮是两块冲压件：脑袋本体是中性的铁皮色，正面再贴一块浅色的"脸"。
+     整颗头都用肤色的话，从背后看后脑勺也是一张脸，很怪。 */
+  const head = new THREE.Group();
+  head.position.set(0, 0.925, 0);
+  head.add(mesh(geoBox('ins_h', 0.24, 0.24, 0.215, j, sd + 2), toyMat('#bda98b', 'tinToy'), 0, 0, 0, true));
+  head.add(mesh(geoBox('ins_f', 0.212, 0.196, 0.022, 0, 0), faceM, 0, -0.008, 0.112));
+  /* 眼睛：两条压出来的横缝，铁皮玩具的脸就是这么印的 */
+  for (const s of [-1, 1]) {
+    head.add(mesh(geoBox('ins_e', 0.060, 0.030, 0.02, 0, 0), inkM, s * 0.056, 0.032, 0.126));
+  }
+  /* 八字胡 */
+  head.add(mesh(geoBox('ins_m', 0.105, 0.026, 0.02, 0, 0), inkM, 0, -0.052, 0.128));
+  for (const s of [-1, 1]) {
+    const t = mesh(geoBox('ins_mt', 0.058, 0.023, 0.02, 0, 0), inkM, s * 0.076, -0.037, 0.128);
+    t.rotation.z = s * 0.42;
+    head.add(t);
+  }
+  /* 大檐帽：帽圈贴头 + 向上外扩的帽顶 + 宽圆帽檐 + 帽徽。
+     第一版是个等径高筒，出来是礼帽不是大檐帽——大檐帽的帽顶是"往外摊开"的。
+     帽檐做宽是有用的：从背后看，那是唯一能把帽子和头分开的轮廓线。 */
+  const capM = toyMat(TIN.cap, 'tinToy');
+  head.add(mesh(geoCyl('ins_c1', 0.126, 0.126, 0.062, 14), capM, 0, 0.128, 0, true));
+  head.add(mesh(geoCyl('ins_c5', 0.152, 0.130, 0.052, 14), capM, 0, 0.180, 0));
+  head.add(mesh(geoCyl('ins_c3', 0.156, 0.156, 0.018, 14), toyMat(TIN.capTop, 'tinToy'), 0, 0.213, 0));
+  head.add(mesh(geoCyl('ins_c2', 0.190, 0.190, 0.022, 16), capM, 0, 0.098, 0.030));
+  head.add(mesh(geoCyl('ins_c4', 0.032, 0.032, 0.02, 10), brass, 0, 0.170, 0.140));
+  core.add(head);
+
+  /* ---- 腿：裤腿比上衣浅一档，靴子压到近黑 ---- */
+  const legAt = (sx, seed) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.108, 0.40, 0);
+    pivot.add(mesh(geoBox('ins_l', 0.125, 0.36, 0.14, j * 0.6, seed), trous, 0, -0.18, 0, true));
+    pivot.add(mesh(geoBox('ins_ft', 0.145, 0.078, 0.215, 0, 0), bootM, 0, -0.361, 0.038, true));
+    return pivot;
+  };
+  const legL = legAt(-1, sd + 5);
+  const legR = legAt(1, sd + 6);
+
+  /* ---- 手臂 ----
+     垂着的那条走正常摆臂；举着检票钳的那条，在肩关节下面再套一层"折起来"的组——
+     因为 applyPose 每帧都会把 armR 复位，折角写在 armR 上会被抹掉。
+     臂长从 0.28 收到 0.22：原来那截小臂长到膝盖，垂下来像根棍子。
+     两只手都是白手套：一身深蓝里，那两点白就是全场的视觉锚。 */
+  const AL = 0.22;
+  const armAt = (sx) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.222, 0.812, 0);
+    return pivot;
+  };
+  const limb = (g) => {
+    g.add(mesh(geoBox('ins_a', 0.088, AL, 0.094, j * 0.6, 0), coat, 0, -AL / 2, 0, true));
+    g.add(mesh(geoBox('ins_cf', 0.098, 0.042, 0.104, 0, 0), trim, 0, -AL - 0.006, 0));
+    g.add(mesh(geoBox('ins_hd', 0.086, 0.086, 0.086, 0, 0), glove, 0, -AL - 0.060, 0, true));
+  };
+  const armL = armAt(-1);
+  limb(armL);
+
+  const armR = armAt(1);
+  const bendR = new THREE.Group();
+  bendR.rotation.x = -1.15;
+  limb(bendR);
+  const punch = buildTicketPunch(0.46);
+  /* 手柄尾端落在手掌上：钳心相对手沿它自己的 +y 挪 0.46*0.30 那么多 */
+  punch.position.set(0, -AL - 0.060 + 0.138 * Math.cos(1.15), 0.138 * Math.sin(1.15));
+  punch.rotation.x = 1.15;        // 抵消 bendR，让钳子重新立起来
+  bendR.add(punch);
+  armR.add(bendR);
+
+  core.add(armL, armR, legL, legR);
+  return { armL: armL, armR: armR, legL: legL, legR: legR, head: head, spin: [key] };
+}
+
+/* ---------------- 铁皮狗 ---------------- */
+/* ---------------- 铁皮狗 ---------------- */
+function buildTinDog(core) {
+  const j = 0.010;
+  const tin = toyMat('#c2c8d0', 'tinToy');
+  const tinDk = toyMat('#79828e', 'tinToy');
+  const pawM = toyMat('#262b33', 'tinToy');
+  const spot = toyMat('#39424f', 'tinToy');
+  const inkM = toyMat('#241f1a', 'eraser');
+
+  /* 身子：横躺的铁皮胶囊。做窄一点——太粗就成了一根香肠，看不出是狗 */
+  const body = mesh(geoCapsule('dog_b', 0.105, 0.24, j, 61), tin, 0, 0.40, -0.02, true);
+  body.rotation.x = Math.PI / 2;
+  core.add(body);
+  /* 背上的印刷斑点 */
+  const spots = [[-0.050, 0.482, -0.09, 0.050], [0.046, 0.498, 0.05, 0.044], [-0.018, 0.466, 0.16, 0.038]];
+  for (const sp of spots) {
+    core.add(mesh(geoSphere('dog_sp', sp[3], sp[3] * 0.42, sp[3], 0, 0), spot, sp[0], sp[1], sp[2]));
+  }
+  /* 脖子：把头和身子接上，不然头是浮在空中的一块方糖 */
+  core.add(mesh(geoBox('dog_nk', 0.115, 0.115, 0.10, 0, 0), tin, 0, 0.475, 0.175, true));
+  /* 脖子上的红项圈 */
+  core.add(mesh(geoTorus('dog_col', 0.088, 0.022, Math.PI * 2), toyMat(TIN.trim, 'tinToy'), 0, 0.475, 0.185));
+  /* 背后发条钥匙 */
+  const key = buildWindupKey(0.72);
+  key.position.set(0, 0.50, -0.09);
+  core.add(key);
+
+  /* 四条腿：按"前后"分成两组，各自绕 x 摆。
+     为什么不按左右分：applyPose 只会转 legL / legR 两个组，如果每组里塞的是
+     同一侧的前后两条腿，旋转轴就落在身体正中（z=0），腿会从身上"甩出去"。
+     按前后分，每组自己的轴就在自己那对胯上，转起来不会脱节。
+     副作用是前腿一起迈、后腿一起迈——正好是狗小跑时的"bound"，反而更对。 */
+  const legPair = (pz, seed) => {
+    const g = new THREE.Group();
+    g.position.set(0, 0.36, pz);
+    for (const sx of [-1, 1]) {
+      g.add(mesh(geoBox('dog_l', 0.070, 0.36, 0.080, j * 0.5, seed), tin, sx * 0.082, -0.18, 0, true));
+      g.add(mesh(geoBox('dog_p', 0.086, 0.062, 0.108, 0, 0), pawM, sx * 0.082, -0.329, 0.014));
+    }
+    return g;
+  };
+  const legL = legPair(0.115, 62);    // 前腿
+  const legR = legPair(-0.115, 63);   // 后腿
+
+  /* 头：比身子大一号，玩具狗就是头大 */
+  const head = new THREE.Group();
+  head.position.set(0, 0.555, 0.255);
+  head.add(mesh(geoBox('dog_h', 0.175, 0.165, 0.175, j, 64), tin, 0, 0, 0, true));
+  head.add(mesh(geoBox('dog_m', 0.100, 0.088, 0.115, 0, 0), tinDk, 0, -0.030, 0.132, true));
+  head.add(mesh(geoSphere('dog_n', 0.032, 0.026, 0.028, 0, 0), pawM, 0, -0.018, 0.192));
+  for (const s of [-1, 1]) {
+    /* 尖耳朵：用四棱锥（顶半径收到 0.012 的 4 面柱），
+       是狗剪影里最好认的一笔——圆耳朵一眼就变成熊了 */
+    const ear = mesh(geoCyl('dog_ear', 0.014, 0.062, 0.130, 4), tinDk, s * 0.070, 0.128, -0.015, true);
+    ear.rotation.z = s * 0.20;
+    head.add(ear);
+    head.add(mesh(geoSphere('dog_ey', 0.026, 0.028, 0.02, 0, 0), inkM, s * 0.055, 0.024, 0.090));
+  }
+  core.add(head);
+
+  /* 尾巴：卷起来的铁皮条 */
+  const tail = mesh(geoTorus('dog_t', 0.075, 0.018, Math.PI * 1.5), tinDk, 0, 0.495, -0.250);
+  tail.rotation.y = Math.PI / 2;
+  core.add(tail);
+
+  /* 狗没有手臂，但 applyPose 每帧都会转 armL / armR，
+     所以给两个空组当占位，省得在姿态代码里到处判空。 */
+  const armL = new THREE.Group();
+  const armR = new THREE.Group();
+  core.add(armL, armR, legL, legR);
+  return { armL: armL, armR: armR, legL: legL, legR: legR, head: head, spin: [key] };
+}
+
+/* ---------------- 追兵总装配 ---------------- */
+function buildChaserRig(kind, opts) {
+  const root = new THREE.Group();
+  const tilt = new THREE.Group();
+  root.add(tilt);
+  const core = new THREE.Group();
+  tilt.add(core);
+
+  const parts = (kind === 'dog') ? buildTinDog(core) : buildInspector(core);
+  const rig = {
+    root: root, tilt: tilt, core: core,
+    armL: parts.armL, armR: parts.armR,
+    legL: parts.legL, legR: parts.legR,
+    head: parts.head, spin: parts.spin,
+    swing: kind === 'dog' ? 1.0 : 0.62,
+    def: CHASER_DEF[kind] || CHASER_DEF.bull, baseY: 0,
+  };
+  if (opts && opts.faceCamera) root.rotation.y = 0;
+  return rig;
+}
+
 const CHASER_DEF = {
   bull: {
-    id: 'bull', skin: 'bull', name: '打包机', body: '#8d5b3f', belly: '#d8a077',
-    shape: 'box', mat: 'wood', acc: 'none',
+    id: 'bull', skin: 'bull', kind: 'inspector', name: '检票员',
+    body: TIN.coat, belly: TIN.brass, shape: 'box', mat: 'tin', acc: 'none',
   },
   dog: {
-    id: 'dog', skin: 'dog', name: '小滚轮', body: '#b0b7c0', belly: '#e2e7ee',
-    shape: 'ball', mat: 'metal', acc: 'none',
+    id: 'dog', skin: 'dog', kind: 'dog', name: '铁皮狗',
+    body: '#b6bcc4', belly: '#7d858f', shape: 'ball', mat: 'tin', acc: 'none',
   },
 };
 
@@ -554,6 +838,8 @@ const Chars3D = {
   def(skin) { return CHAR_MAP[skin] || CHASER_DEF[skin] || CHAR_MAP[DEFAULT_SKIN]; },
 
   build(skin, opts) {
+    /* 追兵单独走一条路：它们不在角色表里，混进 buildRig 会被回退成主角 */
+    if (CHASER_DEF[skin]) return buildChaserRig(skin, opts);
     return buildRig(this.def(skin).skin || skin, opts);
   },
 

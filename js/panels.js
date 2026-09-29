@@ -408,6 +408,149 @@ const Panels = {
     },
   },
 
+  /* ---------------- 云端存档接口 ----------------
+     排行榜是"大家的"，存档是"自己的"。
+     玩家拿到一个 6 位取件码，换台机器输进去就能把进度取回来，不用注册登录。 */
+  cloudSave: {
+    base: '/api/save',
+    ok: null,
+    /* 从本机存档里挑出该上云的那部分（设置、每日任务这些不上） */
+    payload() {
+      const d = Store.data;
+      return {
+        coins: d.coins, char: d.char, chars: d.chars, best: d.best,
+        bestByMap: d.bestByMap, mapsUnlocked: d.mapsUnlocked,
+        skills: d.skills, boardCount: d.boardCount, achClaimed: d.achClaimed,
+        challenges: d.challenges, codexSeen: d.codexSeen,
+        runs: d.runs, totalDist: d.totalDist, totalCoins: d.totalCoins,
+      };
+    },
+    push() {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+      return fetch(this.base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: Store.data.cloudSaveCode || '', data: this.payload() }),
+        signal: ctl ? ctl.signal : undefined,
+      }).then(r => r.json()).then(d => {
+        if (timer) clearTimeout(timer);
+        this.ok = !!(d && d.ok);
+        return d;
+      }).catch(() => { if (timer) clearTimeout(timer); this.ok = false; return null; });
+    },
+    pull(code) {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+      return fetch(this.base + '?code=' + encodeURIComponent(code), { signal: ctl ? ctl.signal : undefined })
+        .then(r => r.json())
+        .then(d => { if (timer) clearTimeout(timer); this.ok = !!(d && d.ok); return d; })
+        .catch(() => { if (timer) clearTimeout(timer); this.ok = false; return null; });
+    },
+    /* 取回来的进度并进本机存档。
+       数值型字段取"更大的那个"（换设备不该把进度往回退），
+       列表型字段取并集，地图纪录逐条比大小。 */
+    apply(data) {
+      if (!data || typeof data !== 'object') return false;
+      const d = Store.data;
+      const num = ['coins', 'best', 'boardCount', 'runs', 'totalDist', 'totalCoins'];
+      num.forEach(k => { if (typeof data[k] === 'number') d[k] = Math.max(d[k] || 0, data[k]); });
+      ['chars', 'mapsUnlocked', 'achClaimed', 'challenges', 'codexSeen'].forEach(k => {
+        if (!Array.isArray(data[k])) return;
+        d[k] = (Array.isArray(d[k]) ? d[k] : []).concat(data[k]).filter((v, i, a) => a.indexOf(v) === i);
+      });
+      if (data.bestByMap && typeof data.bestByMap === 'object') {
+        for (const m in data.bestByMap) {
+          d.bestByMap[m] = d.bestByMap[m] || {};
+          for (const q in data.bestByMap[m]) {
+            d.bestByMap[m][q] = Math.max(d.bestByMap[m][q] || 0, data.bestByMap[m][q] || 0);
+          }
+        }
+      }
+      if (data.skills && typeof data.skills === 'object') {
+        for (const s in data.skills) d.skills[s] = Math.max(d.skills[s] || 0, data.skills[s] || 0);
+      }
+      /* 存档里可能有已经下线的角色 id，过一遍再落地 */
+      d.chars = (d.chars || []).filter(id => !!CHAR_MAP[id]);
+      if (!d.chars.length) d.chars = [DEFAULT_SKIN];
+      if (!CHAR_MAP[d.char] && data.char && CHAR_MAP[data.char]) d.char = data.char;
+      if (!CHAR_MAP[d.char]) d.char = DEFAULT_SKIN;
+      Store.save();
+      return true;
+    },
+  },
+
+  /* ---------------- 云存档卡片 ---------------- */
+  buildCloudSave(box) {
+    const card = document.createElement('div');
+    card.className = 'join-card';
+    const code = Store.data.cloudSaveCode || '';
+    const when = Store.data.cloudSavedAt
+      ? new Date(Store.data.cloudSavedAt).toLocaleDateString('zh-CN') : '';
+    const st = document.createElement('div');
+    st.innerHTML = '<b>云存档</b><span class="cs-st">' +
+      (code ? '取件码 ' + code + (when ? ' · 存于 ' + when : '') : '还没存过') + '</span>';
+    card.appendChild(st);
+
+    const btnUp = document.createElement('button');
+    btnUp.className = 'join-copy';
+    btnUp.textContent = '存到云端';
+    btnUp.addEventListener('click', () => {
+      st.querySelector('.cs-st').textContent = '正在存…';
+      btnUp.disabled = true;
+      this.cloudSave.push().then(r => {
+        btnUp.disabled = false;
+        if (!r || !r.ok) {
+          st.querySelector('.cs-st').textContent = r && r.error === 'KV 未绑定'
+            ? '云端没开（后端 KV 未绑定）' : ('存失败：' + ((r && r.error) || '网络问题'));
+          return;
+        }
+        Store.data.cloudSaveCode = r.code;
+        Store.data.cloudSavedAt = Date.now();
+        Store.save();
+        st.querySelector('.cs-st').textContent = '取件码 ' + r.code + '（换设备用它取回）';
+        this.buildRank();
+      });
+    });
+    card.appendChild(btnUp);
+
+    const btnDown = document.createElement('button');
+    btnDown.className = 'join-copy';
+    btnDown.style.marginLeft = '6px';
+    btnDown.style.background = '#dfe7f5';
+    btnDown.style.color = '#2c3a52';
+    btnDown.style.boxShadow = '0 3px 0 #b9c4d8';
+    btnDown.textContent = '取回来';
+    btnDown.addEventListener('click', () => {
+      const v = window.prompt('输入 6 位取件码', Store.data.cloudSaveCode || '');
+      if (!v) return;
+      const c = String(v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      st.querySelector('.cs-st').textContent = '正在取…';
+      btnDown.disabled = true;
+      this.cloudSave.pull(c).then(r => {
+        btnDown.disabled = false;
+        if (!r || !r.ok) {
+          st.querySelector('.cs-st').textContent = (r && r.error) || '取档失败';
+          return;
+        }
+        if (!this.cloudSave.apply(r.data)) { st.querySelector('.cs-st').textContent = '这份存档是空的'; return; }
+        Store.data.cloudSaveCode = c;
+        Store.save();
+        UI.toast('进度已取回：' + Store.data.coins + ' 铜扣');
+        this.buildRank();
+      });
+    });
+    card.appendChild(btnDown);
+    box.appendChild(card);
+
+    const tip = document.createElement('div');
+    tip.className = 'codex-desc';
+    tip.textContent = '取件码只有 6 位，抄下来收好。取回是"往多了并"，不会把你现有的进度冲掉。';
+    box.appendChild(tip);
+  },
+
   /* ---------------- 排行榜（云端 + 本机） ---------------- */
   buildRank() {
     const box = this.el.rankBody;
@@ -434,16 +577,22 @@ const Panels = {
     nameRow.appendChild(nb);
     box.appendChild(nameRow);
 
-    /* 云端榜（普通难度） */
+    /* 云存档 */
+    this.buildCloudSave(box);
+
+    /* 云端榜：跟着当前难度走，三档各有各的榜 */
+    const dif = World.diff ? World.diff(Store.data.difficulty) : null;
+    const difName = dif ? dif.name : '普通';
     const cloudBox = document.createElement('div');
     cloudBox.className = 'rank-cloud';
-    cloudBox.innerHTML = '<div class="codex-desc">云端排行榜（普通难度 · 需要后端 KV 绑定）加载中…</div>';
+    cloudBox.style.marginTop = '10px';
+    cloudBox.innerHTML = '<div class="codex-desc">云端榜（' + difName + '难度）加载中…</div>';
     box.appendChild(cloudBox);
-    this.cloud.list(Store.data.map, 'normal').then(d => {
+    this.cloud.list(Store.data.map, Store.data.difficulty).then(d => {
       cloudBox.innerHTML = '';
       if (!d || !d.ok) {
-        cloudBox.innerHTML = '<div class="codex-desc">云端未开通：当前只显示本机记录。' +
-          '（在 EdgeOne 控制台给项目绑定 KV 命名空间到变量名 <b>KV</b> 即可开启）</div>';
+        cloudBox.innerHTML = '<div class="codex-desc">云端没开：' + ((d && d.error) || '连不上') +
+          '。当前只显示本机记录。（在 EdgeOne 控制台给项目绑定 KV 命名空间到变量名 <b>KV</b> 即可开启）</div>';
         return;
       }
       if (!d.list || !d.list.length) {
@@ -452,7 +601,7 @@ const Panels = {
       }
       const title = document.createElement('div');
       title.className = 'rank-title';
-      title.textContent = '云端榜 · ' + World.map(Store.data.map).name + ' · 普通难度';
+      title.textContent = '云端榜 · ' + World.map(Store.data.map).name + ' · ' + difName + '难度';
       cloudBox.appendChild(title);
       d.list.forEach((r, i) => {
         const row = document.createElement('div');

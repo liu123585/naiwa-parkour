@@ -64,9 +64,11 @@ const Game = {
     this.timeLeft = (modeDef && modeDef.time) ? modeDef.time : 0;   // 限时挑战倒计时
     this.challengeWin = false;
     this.time = 0; this.elapsed = 0; this.travel = 0; this.speed = 0;
+    this._prevTravel = 0;
     this.score = 0; this.runCoins = 0; this.mult = 1; this.maxMult = 1;
     this.coinStreak = 0; this.objs = []; this.parts = []; this.nextZ = 46;
     this.invuln = 0; this.dying = 0; this.hurtFlash = 0; this.shake = 0;
+    this.nearMissCd = 0; this.coinSndCd = 0;
     this.reviveUsed = 0; this.springs = 0;
     this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0 };
     this.player = {
@@ -143,6 +145,9 @@ const Game = {
     if (this.devFreeze) return;             // 调试截图用：冻结世界只保留渲染
     this.elapsed += dt;
     const p = this.player;
+    /* 碰撞要做扫掠检测，得知道这一帧从哪儿跑到哪儿。
+       放在所有 travel 自增之前取，见 collide() 开头的说明。 */
+    this._prevTravel = this.travel;
 
     /* ---- 死亡演出 ---- */
     if (this.dying > 0) {
@@ -206,13 +211,22 @@ const Game = {
       if (p.boardT <= 0) { p.boardT = 0; this.breakBoard(false); }
     }
 
-    // 支撑面（车顶）
+    /* ---- 支撑面（车顶） ----
+       三处和旧版不一样，都是为了"别把玩家吸到车顶上"：
+       1) z 用扫掠区间（上一帧→这一帧），旧版 ±0.35 在高速下一帧就跨过去了，
+          会在车顶上一脚踩空；
+       2) 只有下落中（vy ≤ 0）才认车顶。旧版无条件吸附，起跳经过车顶高度时
+          会突然被拽下来，手感像撞墙；
+       3) 容差从 0.32 收到 0.18。旧版 0.32 意味着贴着车厢侧面跑也算站车顶，
+          人会在车旁边凭空浮起来。 */
     let support = 0;
+    const supA = Math.min(this._prevTravel, this.travel) - 0.42;
+    const supB = Math.max(this._prevTravel, this.travel) + 0.42;
     for (const o of this.objs) {
       if (o.kind !== 'train') continue;
-      if (Math.abs(p.x - o.x) > o.hw + 0.30) continue;
-      if (this.travel + 0.35 < o.worldZ || this.travel - 0.35 > o.worldZ + o.len) continue;
-      if (p.y >= o.h - 0.32) support = Math.max(support, o.h);
+      if (Math.abs(p.x - o.x) > o.hw + 0.22) continue;
+      if (supB < o.worldZ || supA > o.worldZ + o.len) continue;
+      if (p.vy <= 0.01 && p.y >= o.h - 0.18) support = Math.max(support, o.h);
     }
     p.supportY = support;
 
@@ -249,6 +263,11 @@ const Game = {
     }
     this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2.2);
     if (this.invuln > 0) this.invuln -= dt;
+    /* 两个冷却计时器以前只赋初值、从来没人减，结果都是"一局只生效一次"：
+       nearMissCd 卡在 0.6 之后擦身奖励就再也不给了，
+       coinSndCd 卡在 0.045 之后金币音效也只响第一下。 */
+    if (this.nearMissCd > 0) this.nearMissCd -= dt;
+    if (this.coinSndCd > 0) this.coinSndCd -= dt;
 
     /* ---- 检查员追逐 ---- */
     const chs = this.chaser;
@@ -463,38 +482,58 @@ const Game = {
     o.worldZ = Utils.lerp(o.worldZ, this.travel + 0.2, k * 0.85);
   },
 
-  /* ================= 碰撞 ================= */
+  /* ================= 碰撞 =================
+     旧版只拿 travel ± 0.42 这一个"瞬时窗口"去和障碍的 z 区间比大小，窗口总宽 0.84 米。
+     可最高速 47 m/s 时一帧（1/60s）就走 0.78 米，掉一帧（1/30s）走 1.57 米，
+     迎面列车相对速度 78 m/s 时一帧走 1.3 米 —— 整段障碍直接从窗口里跳过去，撞不上。
+     这就是"明明撞上了却没反应"的来源。
+
+     现在改成扫掠检测（swept AABB）：把玩家这一帧走过的 z 区间 [上一帧, 这一帧]
+     前后各撑开半个身位，再和障碍区间求交。不管一帧跑多远都漏不掉。 */
   collide(o) {
     const p = this.player;
     if (o.taken) return;
-    const dzNear = this.travel + 0.42, dzFar = this.travel - 0.42;
+
+    const PREV = this._prevTravel == null ? this.travel : this._prevTravel;
+    const halfD = 0.42;                                   // 玩家在 z 方向上的半厚
+    const zA = Math.min(PREV, this.travel) - halfD;
+    const zB = Math.max(PREV, this.travel) + halfD;
+
+    /* 判定用的身体尺寸。模型比判定框大一点是刻意的：
+       判定小一圈，玩家才会觉得"擦着边过去了"，而不是"明明躲开了还算撞"。 */
+    const PR = 0.38;                                      // 玩家横向半径
+    const pTop = p.y + (p.rollT > 0 ? CFG.ROLL_H : CFG.PLAYER_H) * 0.92;
+
     if (o.kind === 'coin') {
-      if (Math.abs(o.worldZ - this.travel) > 1.3) return;
+      /* 金币不吃扫掠，改成"这一帧有没有从它旁边经过"。
+         高度容差从 1.9 收到 1.4：旧版人跳到一米高还能捡地上的铜扣，很假。 */
+      if (o.worldZ < zA - 1.3 || o.worldZ > zB + 1.3) return;
       if (Math.abs(o.x - p.x) > 1.05) return;
-      if (Math.abs(o.y - (p.y + 0.85)) > 1.9) return;
+      if (Math.abs(o.y - (p.y + 0.85)) > 1.4) return;
       this.collectCoin(o);
       return;
     }
     if (o.kind === 'power') {
-      if (Math.abs(o.worldZ - this.travel) > 1.4) return;
+      if (o.worldZ < zA - 1.4 || o.worldZ > zB + 1.4) return;
       if (Math.abs(o.x - p.x) > 1.15) return;
-      if (Math.abs(o.y - (p.y + 0.9)) > 2.1) return;
+      if (Math.abs(o.y - (p.y + 0.9)) > 1.5) return;
       o.taken = true;
       this.grantPower(o.kind2, false);
       return;
     }
     if (this.dying > 0) return;
-    // 障碍 / 车厢
-    const len = o.len || 0.6;
-    if (dzNear < o.worldZ || dzFar > o.worldZ + len) {
-      // 记录擦身而过（用于连击提示）
-      return;
-    }
-    const half = (o.hw || 0.95);
-    if (Math.abs(o.x - p.x) > half + 0.40) return;
-    const py = p.y, ph = p.rollT > 0 ? CFG.ROLL_H : CFG.PLAYER_H;
 
-    // 弹跳垫：把你送上云霄
+    /* ---- 障碍 / 车厢 ---- */
+    const len = o.len || 0.6;
+    const oz0 = o.worldZ, oz1 = o.worldZ + len;
+    if (zB < oz0 || zA > oz1) return;                     // 这一帧没扫到它
+
+    const half = (o.hw || 0.95);
+    if (Math.abs(o.x - p.x) > half + PR) return;          // 横向不在一条道上
+
+    const py = p.y;
+
+    /* 弹跳垫：把你送上云霄 */
     if (o.spring) {
       if (this.powers.jet > 0) return;
       if (py < (o.y1 || 0.42) + 0.15) {
@@ -508,11 +547,11 @@ const Game = {
       }
       return;
     }
-    const top = o.kind === 'train' ? o.h : (o.y1 || 1.05);
-    const bottom = o.kind === 'train' ? 0 : (o.y0 || 0);
-    if (o.kind === 'train' && py >= o.h - 0.32) {
-      // 站在车顶 → 计数 + 车顶金币提示
-      if (!o.roofCounted && py >= o.h - 0.2) {
+
+    /* ---- 车厢：踩在顶上就不算撞 ---- */
+    const ROOF_TOL = 0.18;
+    if (o.kind === 'train' && py >= o.h - ROOF_TOL) {
+      if (!o.roofCounted && py >= o.h - 0.10) {
         o.roofCounted = true;
         this.runStats.roofs++;
         Missions.progress('roof', 1);
@@ -522,14 +561,18 @@ const Game = {
       }
       return;
     }
-    if (py < top && py + ph > bottom) {
+
+    /* ---- 竖直方向：判定框比模型小 8%，边缘就不会那么"玄学" ---- */
+    const top = o.kind === 'train' ? o.h : (o.y1 || 1.05) - 0.06;
+    const bottom = o.kind === 'train' ? 0 : (o.y0 || 0) + 0.04;
+    if (py < top && pTop > bottom) {
       if (this.invuln > 0) {
         // 无敌时撞开障碍（视觉反馈）
         if (o.kind !== 'train') { o.taken = true; this.spawnBurst(o.x, 0.8, 18, '#ffd34d'); UI.toast('撞碎！'); }
         return;
       }
       this.crash(o);
-    } else if (!o.kind || o.kind !== 'train') {
+    } else if (o.kind !== 'train') {
       // 成功跨越 → 擦身奖励
       this.nearMiss(o);
     }
@@ -923,8 +966,9 @@ Object.assign(Game, {
       if (this.chaser.on) {
         const zr = rz(this.travel - this.chaser.dist);
         if (zr > CFG.NEAR + 0.4) {
-          Renderer.drawShadow(p.x + 0.95, zr, 1, 0.3);
-          Renderer.drawShadow(p.x - 1.25, zr + 0.6, 0.7, 0.25);
+          /* 检票员个子高，影子摊大一圈；狗矮，影子收窄压扁 */
+          Renderer.drawShadow(p.x + 0.85, zr, 1.15, 0.34);
+          Renderer.drawShadow(p.x - 1.05, zr + 1.0, 0.62, 0.26);
         }
       }
 
@@ -1050,10 +1094,17 @@ Object.assign(Game, {
   drawChaser() {
     const p = this.player;
     const zr = CFG.CAM_BACK - this.chaser.dist;
-    const ph = (this.time * 3.4) % 1;
-    // 追逐组合对齐参考游戏：牛来 + 猎犬
-    Renderer.drawChar('bull', p.x + 0.95, 0, zr, { state: 'run', t: ph, lean: 0.2, front: false }, CFG.PLAYER_H * 1.08);
-    Renderer.drawChar('dog', p.x - 1.25, 0, zr + 0.6, { state: 'run', t: (ph + 0.5) % 1, lean: -0.2, front: false }, CFG.PLAYER_H * 0.62);
+    const catching = this.chaser.mode === 'catch';
+    const ph = (this.time * (catching ? 4.6 : 3.4)) % 1;
+    /* 追上来的是铁皮发条检票员和他那只铁皮狗。
+       狗跑在前面一点，检票员在后头压着——一前一后才看出纵深，
+       两个并排摆着就只是两块色斑了。 */
+    Renderer.drawChar('bull', p.x + 0.85, 0, zr, {
+      state: 'run', t: ph, lean: catching ? 0.5 : 0.2, front: false,
+    }, CFG.PLAYER_H * 1.02);
+    Renderer.drawChar('dog', p.x - 1.05, 0, zr + 1.0, {
+      state: 'run', t: (ph + 0.5) % 1, lean: -0.2, front: false,
+    }, CFG.PLAYER_H * 0.72);
   },
 
   /* ---------------- 结束 / 复活 ---------------- */
@@ -1099,8 +1150,9 @@ Object.assign(Game, {
     if (save.runs_log.length > 6) save.runs_log.length = 6;
     const newly = Achievements.check(save);
     Store.save();
-    /* 云端排行榜：仅普通难度计入（高仿设计：简单/困难只存本机） */
-    if (D.id === 'normal' && sc > 0 && typeof Panels !== 'undefined' && Panels.cloud) {
+    /* 云端后端：三档难度各有一张榜，所以都上传。
+       有取件码的顺手把进度也存一份——每局结束存一次，不用玩家记得点。 */
+    if (sc > 0 && typeof Panels !== 'undefined' && Panels.cloud) {
       if (!save.playerName) {
         save.playerName = '路过的' + Math.floor(1000 + Math.random() * 9000);
         Store.save();
@@ -1110,6 +1162,11 @@ Object.assign(Game, {
       }).then(r => {
         if (r && r.ok && r.rank) UI.toast('云端排名第 ' + r.rank + ' 名（' + save.playerName + '）');
       });
+      if (save.cloudSaveCode && Panels.cloudSave) {
+        Panels.cloudSave.push().then(r => {
+          if (r && r.ok) { save.cloudSavedAt = Date.now(); Store.save(); }
+        });
+      }
     }
     UI.showOver({
       score: sc, coins: this.runCoins, dist: Math.floor(this.travel),
