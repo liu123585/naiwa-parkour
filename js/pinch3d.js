@@ -177,11 +177,14 @@ const Pinch3D = {
     const key = 'u' + color + (opts && opts.opacity !== undefined ? opts.opacity : '');
     if (!this._uc) this._uc = {};
     if (this._uc[key]) return this._uc[key];
+    /* transparent 要显式给布尔。写成 `opts && ...` 在不传 opts 时会得到 undefined，
+       three 那边会警告 "parameter 'transparent' has value of undefined"。 */
+    const hasAlpha = !!(opts && opts.opacity !== undefined);
     return (this._uc[key] = new THREE.MeshBasicMaterial({
       color: new THREE.Color(color),
-      transparent: opts && opts.opacity !== undefined,
-      opacity: opts && opts.opacity !== undefined ? opts.opacity : 1,
-      fog: opts && opts.fog === false ? false : true,
+      transparent: hasAlpha,
+      opacity: hasAlpha ? opts.opacity : 1,
+      fog: !(opts && opts.fog === false),
     }));
   },
   textured(t, color, opts) {
