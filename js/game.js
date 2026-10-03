@@ -776,7 +776,9 @@ const Game = {
       const pt = this._take('parts');
       pt.x = p.x + Utils.rand(-0.3, 0.3); pt.y = 0.05; pt.z = this.travel - 0.4 + Utils.rand(-0.3, 0.3);
       pt.vx = Utils.rand(-1, 1); pt.vy = Utils.rand(0.6, 1.8); pt.vz = Utils.rand(-2.5, -0.5);
-      pt.r = Utils.rand(0.05, 0.1); pt.life = 0.35; pt.max = 0.35; pt.color = 'rgba(220,215,200,.85)'; pt.shape = 'dot';
+      /* 颜色给纯色，透明度交给 life 去算。
+         写成 rgba(...) 的话 3D 那边 new THREE.Color() 会吞掉 alpha 并报警告。 */
+      pt.r = Utils.rand(0.05, 0.1); pt.life = 0.35; pt.max = 0.35; pt.color = '#dcd7c8'; pt.shape = 'dot';
       this.parts.push(pt);
     }
   },
