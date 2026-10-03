@@ -2,9 +2,9 @@
 
 玩具厂倒闭那晚，车间里没做完的小家伙全跑了。
 
-一个纯前端的 3 跑道无尽跑酷网页游戏（手机上玩）。**零外部素材**——15 个角色、8 张景片、
-全部障碍与场景，都是代码程序化生成的；音效与 BGM 由 Web Audio 实时合成。
-没有一张贴图文件，没有一个模型文件。
+一个纯前端的 3 跑道无尽跑酷网页游戏（手机上玩）。**除了一首 BGM，零外部素材**——
+15 个角色、8 张景片、全部障碍与场景都是代码程序化生成的；
+音效与「八音盒」BGM 由 Web Audio 实时合成。没有一张贴图文件，没有一个模型文件。
 
 世界观是一张**手工微缩景观**：冰棍棒当枕木、瓦楞纸当道砟、快递箱当楼房、纽扣当金币，
 一盏暖台灯从右后方打光，影子软软地摊在地上。
@@ -31,7 +31,21 @@ PAGES_SOURCE=skills edgeone makers deploy   # 2. 再直传到 EdgeOne（producti
 部署会输出一行 `EDGEONE_DEPLOY_URL=`，里面带 `?eo_token=...` 参数——
 **这串参数不能截断**，但实测去掉 token 也能正常访问，稳定地址就是上面那个域名。
 
-CLI 自动忽略 `node_modules/`，并遵循 `.gitignore`（所以 `shots/`、`.edgeone/` 不会被打包上传）。
+⚠️ **直传部署不遵循 `.gitignore`**（只有 `node_modules/` 是 CLI 单独排除的）。
+项目目录里的东西会原样打进上传包——`shots/` 是开发截图，几十 MB，
+留在项目里会拖垮上传，典型表现是 `edge-functions/index.js`、`project.json`
+这些关键文件 ECONNRESET 上传失败 → 部署 Failed。
+**部署前先把 `shots/` 挪出项目目录**，传完再挪回来：
+
+```bash
+mv shots ../.naiwa-shots-hold                    # 1. 挪走开发截图
+PAGES_SOURCE=skills edgeone makers deploy --json # 2. 直传（--json 拿一行机器可读结果）
+mv ../.naiwa-shots-hold shots                    # 3. 挪回来
+```
+
+另外 `edgeone makers deploy` 的退出码和回显都不完全可信——
+**别只看退出码**，用 `curl` 打线上端点看实际响应才算数
+（比如 `/api/rank` 的返回里带 `howto` 字段就说明是新版）。
 
 ## 后端
 
@@ -87,6 +101,8 @@ CLI 自动忽略 `node_modules/`，并遵循 `.gitignore`（所以 `shots/`、`.
 - **角色**：13 个可解锁角色，材质各异（黏土 / 纸板 / 毛线 / 铁皮 / 橡皮 / 毛毡 / 木头 /
   塑料 / 瓷 / 透明 / 黄铜 / 金属 / 棉花），各自带被动技能，每人 6 套配色
 - **成长**：金币商店、技能升级、每日任务（按日期种子生成）、15 个成就、最佳成绩记录
+- **BGM 音源**：设置里可在「八音盒」（实时合成，默认）和「原声」（`audio/bgm-sport.mp3`）
+  之间切；浏览器不支持 MP3 时会如实显示并自动回落到八音盒
 
 存档默认在浏览器 `localStorage`（键名 `pinchRun.save.v1`）；榜单和跨设备进度走上面的云端端点。
 
@@ -111,6 +127,24 @@ CLI 自动忽略 `node_modules/`，并遵循 `.gitignore`（所以 `shots/`、`.
 `scale.x = -1` 的镜像组，相机 / 灯 / 天空幕布 / `proj` 这几个不在组里的手动取负。
 整体镜像而不是逐个取负，是因为逐个取负会漏掉旋转（绕 y、绕 z 的旋转也要反号）。
 
+### 性能上踩过的坑
+
+手机上真正吃性能的是 **draw call 数**，不是 JS。目前一场对局平均 ~125 个
+（优化前 205~233）。几处关键改动：
+
+- **描边整批剔除**：角色/物体的 BackSide 描边 mesh 全挂 `layer 1`，
+  低画质或低分辨率时 `camera.layers.disable(1)` 一把关掉，省掉三四十个 draw call。
+- **每帧 `new THREE.Color()` 是隐形杀手**：`drawSky` 每帧 new 5 个（一秒 300 个），
+  楼房亮度抖动、`dark()` 颜色微调也是每次调用都 new 一个再转字符串。
+  前者按「夜色档 + 主题 + 两色」缓存，后者按 `hex|k` 建备忘表——一秒上千次分配全免。
+- **远景楼只留剪影**：一栋楼的窗户/空调/雨棚/天线加起来十几个 draw call，
+  而 44 米外它们只有几个像素大，直接跳过。
+- **自适应画质不能是棘轮**：以前降档后永远升不回来，还直接改玩家选的 `quality`
+  （面板显示"中"实际跑 low）。现在只动 `resScale` 这一个动态旋钮，
+  降档看**最差帧**（体感卡顿来自长帧，不是平均值），升档要求连续两个窗口都稳。
+  同理 `Game.trackFps` 的 `dpr` 也改成双向可逆。
+- 天空/楼房那几处颜色缓存，见 `js/pinch3d.js` 的 `dark()` 与 `drawSky()`。
+
 ## 目录结构
 
 ```
@@ -118,7 +152,7 @@ index.html            入口，含全部界面骨架与启动脚本
 css/style.css         全部界面样式（HUD、菜单、面板、结算）
 js/config.js          常量、13 个角色数据、道具、成就、存档系统
 js/world.js           出逃路线（8 张景片）、难度、衣橱、障碍图鉴、挑战之路
-js/audio.js           Web Audio 实时合成音效与循环 BGM（无音频文件）
+js/audio.js           Web Audio 实时合成音效 + 八音盒 BGM，兼管「原声」音轨的播放/切换
 js/chars.js           2D 角色绘制（矢量骨架 + 跑步/跳跃/滑铲/翻滚动画）
 js/pinchchars.js      3D 角色建模与动画（程序化几何 + 定格动画）
 js/draw.js            2D 回退渲染器：透视投影、天地景、铁轨、接触网、车厢、粒子
@@ -129,6 +163,7 @@ js/panels.js          面板系统（出逃路线 / 障碍图鉴 / 挑战之路 
 js/game.js            游戏主循环、物理、碰撞、道具、追逐、关卡生成器
 functions/api/rank.js 云端排行榜边缘函数
 functions/api/save.js 云端存档边缘函数
+audio/bgm-sport.mp3   可选原声 BGM（CC0 公有领域，设置里切「原声」才加载）
 vendor/three.min.js   Three.js r170（本地打包，全局 IIFE）
 tools/selftest.js     headless 自测（mock canvas/DOM 跑完整对局 + 智能 bot 可通过性验证）
 tools/test-collide.js 碰撞回归测试：直接驱动 Game.update()，含掉帧/迎面列车穿模用例
@@ -171,5 +206,10 @@ bot 会读赛道信息做避让，用来验证「关卡一定有解」（不会�
 
 ## 说明
 
-- 角色、场景、音效全部原创，代码生成，不含任何第三方素材文件。
+- 角色、场景、音效全部原创，代码生成。
+- 唯一的外部文件是 `audio/bgm-sport.mp3`（设置里「BGM 音源 → 原声」才会用到）：
+  **Retro Sports (Stage 3) — Juhani Junkala / SubspaceAudio**，
+  **CC0 1.0 公有领域**（来源 OpenGameArt `12-music-loops`）。
+  原始素材是 OGG，本地用 ffmpeg 转成 128kbps MP3 并去掉 Xing 头做成整 60 秒无缝循环
+  ——iOS Safari 不支持 OGG，统一出 MP3。不想用外部文件就把设置切回「八音盒」。
 - 玩法灵感来自《地铁跑酷（Subway Surfers）》，角色与美术为原创设计。

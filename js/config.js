@@ -281,7 +281,8 @@ const DEFAULT_SAVE = {
   char: 'ni',
   skills: { magnet: 0, jet: 0, shoe: 0, board: 0, revive: 0 },
   boardCount: 3,          // 悬浮板库存
-  settings: { sfx: true, music: true, vibe: true, quality: 'mid', tips: true },
+  /* musicSrc: 'synth' = 实时合成的八音盒（默认），'file' = CC0 原声 MP3 */
+  settings: { sfx: true, music: true, musicSrc: 'synth', vibe: true, quality: 'mid', tips: true },
   missions: null,          // { date:'2026-09-26', list:[{id,idx,progress,done,claimed}] }
   achClaimed: [],
   runs_log: [],

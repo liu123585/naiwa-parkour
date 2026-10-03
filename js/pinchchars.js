@@ -109,14 +109,39 @@ function geoCyl(key, rt, rb, h, seg) {
 }
 
 /* 哑光用 Lambert（无高光），有光泽的用 Phong（靠灯打高光，不依赖环境贴图） */
+/* ---------------- 服装染色 ----------------
+   WebGL 套不了 CSS 滤镜，所以把商店里那套 filter 折算成
+   「色相旋转 + 饱和度倍数 + 明度倍数 + 泛黄」，在造材质时逐色算一遍。
+   BUILD_TINT 是构建期的全局：buildRig 进来先设、出去清掉，
+   toyMat 把 tint 的 id 也算进缓存键，否则不同服装会共用同一份材质。 */
+let BUILD_TINT = null;
+let BUILD_TINT_ID = '-';
+
+function tintColor(color) {
+  const t = BUILD_TINT;
+  if (!t) return color;
+  const c = new THREE.Color(color);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  let h = (hsl.h + (t.hue || 0) / 360) % 1;
+  if (h < 0) h += 1;
+  const s = Math.min(1, hsl.s * (t.sat == null ? 1 : t.sat));
+  const l = Math.min(1, Math.max(0.02, hsl.l * (t.bri == null ? 1 : t.bri)));
+  c.setHSL(h, s, l);
+  /* 泛黄：往老照片的棕黄上拉一把 */
+  if (t.sepia) c.lerp(new THREE.Color(0xc8a24a), t.sepia * 0.75);
+  return c;
+}
+
 function toyMat(color, matName) {
   const m = TOY_MAT[matName] || TOY_MAT.clay;
-  const k = matName + '|' + color + '|' + (m.opacity || 1);
+  const k = matName + '|' + color + '|' + (m.opacity || 1) + '|' + BUILD_TINT_ID;
   if (MatCache[k]) return MatCache[k];
+  const col = tintColor(color);
   let out;
   if (m.shiny > 0) {
     out = new THREE.MeshPhongMaterial({
-      color: new THREE.Color(color),
+      color: col,
       shininess: m.shiny,
       specular: new THREE.Color(0xffffff).multiplyScalar(0.22 + m.metal * 0.5),
       flatShading: !!m.flat,
@@ -125,7 +150,7 @@ function toyMat(color, matName) {
     });
   } else {
     out = new THREE.MeshLambertMaterial({
-      color: new THREE.Color(color),
+      color: col,
       flatShading: !!m.flat,
     });
   }
@@ -147,6 +172,10 @@ function mesh(geo, mat, x, y, z, outline) {
   if (outline) {
     const o = new THREE.Mesh(geo, outlineMat());
     o.scale.setScalar(1.07);
+    /* 描边单独放 layer 1：相机把 layer 1 一关，全场的描边 mesh 就整批不画了，
+       不用遍历骨架去逐个改 visible。低画质/低分辨率时靠这个一口气省掉
+       三四十个 draw call（角色上描边几乎占了一半的 mesh 数）。 */
+    o.layers.set(1);
     m.add(o);
   }
   return m;
@@ -431,7 +460,18 @@ function buildBody(cd, seed) {
 /* =========================================================
    整只装配
    ========================================================= */
+/* 染色上下文只在这一层开合：进出都还原，避免影响别的调用方。
+   包一层而不是往原函数里塞 try/finally，是因为原函数体太长，
+   整段缩进会让 diff 淹没在空白里。 */
 function buildRig(skin, opts) {
+  const prevTint = BUILD_TINT, prevId = BUILD_TINT_ID;
+  BUILD_TINT = (opts && opts.tint) || null;
+  BUILD_TINT_ID = (opts && opts.tintId) || '-';
+  try { return buildRigInner(skin, opts); }
+  finally { BUILD_TINT = prevTint; BUILD_TINT_ID = prevId; }
+}
+
+function buildRigInner(skin, opts) {
   const cd = CHAR_MAP[skin] || CHAR_MAP[DEFAULT_SKIN];
   const seed = (skin.charCodeAt(0) * 7 + skin.length * 13) % 97;
   const j = (TOY_MAT[cd.mat] || TOY_MAT.clay).jitter;
@@ -888,7 +928,16 @@ function buildTinDog(core) {
 }
 
 /* ---------------- 追兵总装配 ---------------- */
+/* 追兵不穿服装，这里把染色上下文显式压成 null，
+   免得上一只角色的染色漏到检票员/铁皮狗身上。 */
 function buildChaserRig(kind, opts) {
+  const prevTint = BUILD_TINT, prevId = BUILD_TINT_ID;
+  BUILD_TINT = null; BUILD_TINT_ID = '-';
+  try { return buildChaserRigInner(kind, opts); }
+  finally { BUILD_TINT = prevTint; BUILD_TINT_ID = prevId; }
+}
+
+function buildChaserRigInner(kind, opts) {
   const root = new THREE.Group();
   const tilt = new THREE.Group();
   root.add(tilt);
@@ -928,9 +977,19 @@ const Chars3D = {
   queue: [],
   rigs: {},
   _building: {},
+  heroRenderer: null,
+  heroScene: null,
+  heroCam: null,
 
   loadModels() { return Promise.resolve(); },
-  outfitTint() { return null; },
+
+  /* 当前穿的是哪套服装。3D 没法套 CSS filter，得把观感折算成染色参数。 */
+  outfitTint(skin) {
+    if (typeof World === 'undefined' || !World.outfit) return { tint: null, id: 'origin' };
+    const o = World.outfit(skin) || null;
+    if (!o) return { tint: null, id: 'origin' };
+    return { tint: o.tint || null, id: o.id || 'origin' };
+  },
 
   def(skin) { return CHAR_MAP[skin] || CHASER_DEF[skin] || CHAR_MAP[DEFAULT_SKIN]; },
 
@@ -940,16 +999,96 @@ const Chars3D = {
     return buildRig(this.def(skin).skin || skin, opts);
   },
 
-  /* 取一只可复用的骨架（追兵会同时出现两只，用不同实例避免打架） */
-  acquire(skin, slot) {
-    const key = skin + '#' + (slot || 0);
-    if (!this.rigs[key]) this.rigs[key] = this.build(skin, null);
+  /* 取一只可复用的骨架。服装算进 key：换了衣服就是另一只骨架，
+     否则染色材质是构建期烘死的，换装不会生效。
+     （追兵会同时出现两只，用不同 slot 避免打架） */
+  acquire(skin, slot, outfitId) {
+    const oid = outfitId || 'origin';
+    /* 换了衣服，旧那套骨架就没人再用了。这里顺手清掉，
+       否则玩家在商店里来回切几轮，内存里会堆一摞废模型。 */
+    if (!CHASER_DEF[skin] && this._oid !== skin + '#' + oid) {
+      this._oid = skin + '#' + oid;
+      const pre = skin + '#';
+      for (const k in this.rigs) {
+        if (k.indexOf(pre) === 0 && k.slice(pre.length).split('#')[1] !== oid) delete this.rigs[k];
+      }
+    }
+    const key = skin + '#' + (slot || 0) + '#' + oid;
+    if (!this.rigs[key]) {
+      const t = CHASER_DEF[skin] ? { tint: null, id: 'origin' } : this.outfitTint(skin);
+      this.rigs[key] = this.build(skin, { tint: t.tint, tintId: t.id });
+    }
     return this.rigs[key];
+  },
+
+  /* ---------------- 菜单英雄：每帧实时渲染 ----------------
+     以前菜单里那只角色是一张静态缩略图上下浮动，一眼就看出是贴图。
+     这里开一个小尺寸离屏 renderer 每帧真渲染一遍：同一个骨架、
+     同一套灯、同一套姿态系统，角色会呼吸、会慢慢左右转。
+     只在菜单里跑（进游戏后不再调用），开销可以接受。
+     任何一步失败都返回 false，调用方回落到静态缩略图。 */
+  heroRig: null, heroKey: '',
+
+  renderHero(canvas, skin, time) {
+    if (typeof THREE === 'undefined' || !canvas) return false;
+    if (!this.heroRenderer) {
+      try {
+        const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        r.setPixelRatio(1);
+        r.setSize(320, 320, false);
+        r.setClearAlpha(0);
+        r.outputColorSpace = THREE.SRGBColorSpace;
+        const sc = new THREE.Scene();
+        /* 灯必须和 buildThumbs 一模一样。之前吃过亏：离屏和场上用两套灯，
+           结果"离屏好看、进游戏发白"来回折腾了好几轮。 */
+        sc.add(new THREE.AmbientLight(0xfff3e2, 1.15));
+        const key = new THREE.DirectionalLight(0xfff0d6, 1.9);
+        key.position.set(2.2, 3.4, 3.0);
+        sc.add(key);
+        const rim = new THREE.DirectionalLight(0x9fc4e8, 0.75);
+        rim.position.set(-2.6, 1.6, -2.4);
+        sc.add(rim);
+        const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
+        cam.position.set(0.42, 1.16, 2.62);
+        cam.lookAt(0, 0.86, 0);
+        this.heroRenderer = r; this.heroScene = sc; this.heroCam = cam;
+      } catch (e) {
+        this.heroRenderer = null;
+        return false;
+      }
+    }
+
+    const oid = this.outfitTint(skin).id;
+    const key = skin + '#' + oid;
+    if (this.heroKey !== key) {
+      if (this.heroRig) this.heroScene.remove(this.heroRig.root);
+      const t = this.outfitTint(skin);
+      const rig = this.build(skin, { faceCamera: true, tint: t.tint, tintId: t.id });
+      rig.root.scale.setScalar(1.5);
+      this.heroScene.add(rig.root);
+      this.heroRig = rig;
+      this.heroKey = key;
+    }
+
+    const rig = this.heroRig;
+    applyPose(rig, { state: 'idle', t: (time || 0) * 0.55 });
+    /* 慢慢左右摆一点，才看得出是立体的而不是一张画 */
+    rig.root.rotation.y = Math.sin((time || 0) * 0.55) * 0.42;
+
+    try {
+      this.heroRenderer.render(this.heroScene, this.heroCam);
+      const c = canvas.getContext('2d');
+      c.clearRect(0, 0, canvas.width, canvas.height);
+      c.drawImage(this.heroRenderer.domElement, 0, 0, canvas.width, canvas.height);
+      return true;
+    } catch (e) { return false; }
   },
 
   /* 由渲染器每帧调用：把游戏传进来的角色塞进队列 */
   draw(skin, x, y, wz, pose, height, tint) {
-    this.queue.push({ skin: skin, x: x, y: y, z: wz, pose: pose, h: height || CFG.PLAYER_H });
+    /* 服装在内部自己查，调用方（game.js）不用管，省得每处都改 */
+    const oid = CHASER_DEF[skin] ? 'origin' : this.outfitTint(skin).id;
+    this.queue.push({ skin: skin, x: x, y: y, z: wz, pose: pose, h: height || CFG.PLAYER_H, oid: oid });
   },
 
   /* 渲染器消费队列 */
@@ -958,8 +1097,9 @@ const Chars3D = {
     if (!q.length) return;
     const slots = {};
     for (const it of q) {
-      const slot = slots[it.skin] = (slots[it.skin] || 0) + 1;
-      const rig = this.acquire(it.skin, slot);
+      const sk = it.skin + '#' + it.oid;
+      const slot = slots[sk] = (slots[sk] || 0) + 1;
+      const rig = this.acquire(it.skin, slot, it.oid);
       applyPose(rig, it.pose || {});
       rig.root.position.set(it.x, it.y, it.z);
       rig.root.scale.setScalar(it.h);

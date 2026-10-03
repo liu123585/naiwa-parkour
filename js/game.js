@@ -12,7 +12,7 @@ const Game = {
   nearMissCd: 0, coinSndCd: 0,
   themeFrom: THEMES.day, themeTo: THEMES.day, themeT: 1, theme: THEMES.day, themeTimer: 0,
   runStats: null, ranRevive: 0, reviveUsed: 0, pausedFrom: 'run',
-  fps: { samples: [], avg: 60, quality: 'mid', lowFrames: 0, dprStep: 0 },
+  fps: { samples: [], avg: 60, quality: 'mid', lowFrames: 0, goodFrames: 0, dprStep: 0 },
 
   player: {
     x: 0, y: 0, vy: 0, lane: 1, state: 'run', phase: 0,
@@ -46,8 +46,13 @@ const Game = {
 
   applySettings() {
     const s = Store.data.settings;
-    Sound.setSfx(s.sfx); Sound.setMusic(s.music);
+    Sound.setSfx(s.sfx);
+    /* 音源要先设，setMusic 内部的 applyMusic 会按它决定放合成还是原声 */
+    Sound.setMusicSrc(s.musicSrc || 'synth');
+    Sound.setMusic(s.music);
     Renderer.quality = s.quality;
+    /* 画质档变了，描边/颗粒这些"锦上添花"的开合也要跟着重判一次 */
+    if (Renderer.applyDetail) Renderer.applyDetail();
     Renderer.resize();
   },
 
@@ -128,11 +133,31 @@ const Game = {
     if (f.samples.length < 45 || this.state !== 'run') return;
     const avg = f.samples.reduce((a, b) => a + b, 0) / f.samples.length;
     f.avg = 1 / Math.max(0.0001, avg);
+    /* 这一层管的是画布分辨率（dprScale），2D / 3D 两条路都吃得到。
+       同样必须两头都能走：旧版只有降档分支，dprStep 一旦加过就再也回不去，
+       设备启动时抖一下，之后整局都是糊的。回升要求"明显高于阈值"（>56fps）
+       并持续 180 帧，迟滞拉够，免得在 52fps 上下反复 resize。 */
     if (f.avg < 52) {
+      f.goodFrames = 0;
       f.lowFrames++;
-      if (f.lowFrames > 50 && f.dprStep === 0) { f.dprStep = 1; Renderer.dprScale = 0.84; Renderer.resize(); f.lowFrames = 0; }
-      else if (f.lowFrames > 120 && f.dprStep === 1) { f.dprStep = 2; Renderer.dprScale = 0.68; Renderer.fxLow = true; Renderer.resize(); f.lowFrames = 0; }
-    } else { f.lowFrames = Math.max(0, f.lowFrames - 1); }
+      if (f.lowFrames > 50 && f.dprStep < 2) {
+        f.dprStep++;
+        Renderer.dprScale = f.dprStep === 1 ? 0.84 : 0.68;
+        if (f.dprStep >= 2) Renderer.fxLow = true;
+        Renderer.resize(); f.lowFrames = 0;
+      }
+    } else {
+      f.lowFrames = Math.max(0, f.lowFrames - 1);
+      if (f.avg > 56) {
+        f.goodFrames = (f.goodFrames || 0) + 1;
+        if (f.goodFrames > 180 && f.dprStep > 0) {
+          f.dprStep--;
+          Renderer.dprScale = f.dprStep === 0 ? 1 : 0.84;
+          if (f.dprStep < 2) Renderer.fxLow = false;
+          Renderer.resize(); f.goodFrames = 0;
+        }
+      } else f.goodFrames = 0;
+    }
   },
 
   /* 菜单背景用一点慢速卷动，看起来更活 */

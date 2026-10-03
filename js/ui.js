@@ -97,6 +97,7 @@ const UI = {
     };
     this.bind();
     this.ensureMissionsTab();
+    this.buildDust();
     this.refreshCoins();
     this.buildChars();
     this.buildMissions();
@@ -126,6 +127,10 @@ const UI = {
     this.refreshCoins();
     this.el.menuBest.textContent = Utils.fmt(Store.data.best);
     this.el.menuTotal.textContent = Utils.fmt(Store.data.totalDist);
+    /* 提示立刻给一条，别让那块地方空着等 5 秒 */
+    if (!this.el.menuTip.textContent) {
+      this.el.menuTip.textContent = QUOTES.menu[this._tipIdx % QUOTES.menu.length];
+    }
   },
   showHUD() { this.el.hud.classList.remove('hidden'); },
   showPause(g) {
@@ -288,19 +293,51 @@ const UI = {
     }
   },
 
-  /* ---------------- 菜单英雄展示 ---------------- */
+  /* ---------------- 菜单英雄展示 ----------------
+     优先走 Chars3D.renderHero()：每帧真渲染一遍场上同款 3D 模型，
+     角色会呼吸、会慢慢转身。任何一步失败就回落到静态缩略图。
+     clientWidth 只量一次并缓存——它是强制布局读取，每帧调一次
+     等于每帧逼浏览器重算一遍样式。 */
+  _heroW: 0, _heroH: 0,
+
+  /* 菜单里飘的灰尘：纯 CSS 动画，8 个点随机 left / 时长 / 延迟。
+     加这一层是为了让静态排版"有空气"，不然背景一动它就露馅。 */
+  buildDust() {
+    const box = document.getElementById('menuDust');
+    if (!box) return;
+    box.innerHTML = '';
+    for (let i = 0; i < 8; i++) {
+      const d = document.createElement('i');
+      d.style.left = (4 + Math.random() * 92).toFixed(1) + '%';
+      d.style.animationDuration = (11 + Math.random() * 11).toFixed(1) + 's';
+      d.style.animationDelay = (-Math.random() * 18).toFixed(1) + 's';
+      d.style.opacity = (0.30 + Math.random() * 0.5).toFixed(2);
+      const px = (2 + Math.random() * 2.6).toFixed(1);
+      d.style.width = px + 'px'; d.style.height = px + 'px';
+      box.appendChild(d);
+    }
+  },
+
   animateMenu(time) {
     if (this.el.menu.classList.contains('hidden')) return;
-    // 首次进菜单时后台预热 AI 素材
-    if (!this._artWarm) {
-      // 封面与商店已改用场上同款真 3D 模型渲染，无需再下载几十 MB 的 AI 立绘
-      this._artWarm = true;
-    }
+    this._artWarm = true;   // 封面用真 3D 模型，不需要再下载 AI 立绘
     const ch = CHAR_MAP[Store.data.char] || CHAR_MAP[DEFAULT_SKIN];
     const cv = this.el.hero;
-    const w = cv.clientWidth || 300, h = cv.clientHeight || 300;
+    if (!this._heroW) {
+      this._heroW = cv.clientWidth || 300;
+      this._heroH = cv.clientHeight || 300;
+    }
+    const w = this._heroW, h = this._heroH;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (cv.width !== Math.floor(w * dpr)) { cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr); }
+
+    /* 首选：实时 3D（内部自己清画布并 drawImage） */
+    if (typeof Chars3D !== 'undefined' && Chars3D.renderHero &&
+        Chars3D.renderHero(cv, ch.skin, time)) {
+      this.menuTips(time);
+      return;
+    }
+
     const c = cv.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
@@ -351,8 +388,16 @@ const UI = {
       }
       c.restore();
     }
-    // 提示轮播
-    this._tipT += 0.016;
+    this.menuTips(time);
+  },
+
+  /* 底部提示轮播。用真实时间差而不是"每帧加 0.016"——
+     后者在 120Hz 屏幕上会快一倍。 */
+  _tipLast: 0,
+  menuTips(time) {
+    if (!this._tipLast) this._tipLast = time;
+    this._tipT += Math.min(0.25, time - this._tipLast);
+    this._tipLast = time;
     if (this._tipT > 5) {
       this._tipT = 0;
       this._tipIdx = (this._tipIdx + 1) % QUOTES.menu.length;
@@ -402,10 +447,18 @@ const UI = {
     this.stopCardAnim();
     if (typeof ART !== 'undefined') ART.preloadAll(CHARS.map(c => c.skin));
     const tick = () => {
-      if (this.el.chars.classList.contains('hidden')) { this._cardTick = null; return; }
-      const t = performance.now() / 1000;
-      this.el.charsBody.querySelectorAll('canvas[data-skin]').forEach(cv => CharArtAPI.thumb(cv, cv.dataset.skin, t));
-      this._cardTick = setTimeout(tick, 60);
+      /* 面板不可见时不要自杀。
+         以前这里是 `_cardTick = null; return;`——而 UI.init() 会在面板还藏着的
+         时候先跑一次 buildChars()，那个 tick 一执行就死在隐藏态上，
+         之后没有任何代码会重启它，卡片就一直是空的。
+         现在改成"看不见就把节奏放慢、继续排队"，面板一显示自动接着画。 */
+      if (this.el.chars && !this.el.chars.classList.contains('hidden')) {
+        const t = performance.now() / 1000;
+        this.el.charsBody.querySelectorAll('canvas[data-skin]').forEach(cv => CharArtAPI.thumb(cv, cv.dataset.skin, t));
+        this._cardTick = setTimeout(tick, 60);
+      } else {
+        this._cardTick = setTimeout(tick, 400);
+      }
     };
     this._cardTick = setTimeout(tick, 30);
   },
@@ -495,6 +548,10 @@ const UI = {
     const set = (id, on) => document.getElementById(id).classList.toggle('on', !!on);
     set('setSfx', s.sfx); set('setMusic', s.music); set('setVibe', s.vibe); set('setTips', s.tips);
     document.querySelectorAll('#setQuality button').forEach(b => b.classList.toggle('on', b.dataset.q === s.quality));
+    /* 音源档位：显示的是"实际会响的那个"。浏览器不支持 MP3 时
+       即便存档里选着 file，也要如实显示成八音盒，别骗玩家。 */
+    const src = (typeof Sound !== 'undefined' && Sound.activeSrc) ? Sound.activeSrc() : 'synth';
+    document.querySelectorAll('#setMusicSrc button').forEach(b => b.classList.toggle('on', b.dataset.ms === src));
   },
 
   refreshCoins() {
@@ -604,5 +661,20 @@ const UI = {
         this.toast('存档已清空');
       }
     };
+    document.querySelectorAll('#setMusicSrc button').forEach(b => {
+      b.onclick = () => {
+        if (b.dataset.ms === 'file' && !Sound.bgmSupported()) {
+          Sound.deny();
+          this.toast('当前浏览器不支持 MP3，只能听八音盒');
+          return;
+        }
+        Store.data.settings.musicSrc = b.dataset.ms;
+        Store.save();
+        Game.applySettings();
+        this.buildSettings();
+        Sound.ui();
+        this.toast(b.dataset.ms === 'file' ? 'BGM：原声' : 'BGM：八音盒');
+      };
+    });
   },
 };

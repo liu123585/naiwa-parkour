@@ -37,6 +37,10 @@ const Panels = {
   },
 
   open(which) {
+    /* chars / missions / settings 这三个面板的内容是 UI 那边重建的，
+       这里只把 hidden 摘掉的话会得到"面板出来了但列表还是空的"。
+       入口收敛到 UI.openPanel，免得两个入口行为不一致。 */
+    if (which === 'chars' || which === 'missions' || which === 'settings') { UI.openPanel(which); return; }
     UI.hideAllScreens();
     UI.el.hud.classList.add('hidden');
     const map = { maps: 'maps', codex: 'codex', path: 'path', outfits: 'outfits', rank: 'rank', join: 'join' };
@@ -342,13 +346,15 @@ const Panels = {
       cv.width = 200; cv.height = 168;
       const c = cv.getContext('2d');
       try {
-        if (o.filter && o.filter !== 'none') c.filter = o.filter;
+        /* 滤镜交给 thumb() 在 resize 之后设——这里提前设会被 canvas.width 赋值抹掉 */
+        const flt = (o.filter && o.filter !== 'none') ? o.filter : '';
+        if (flt) c.filter = flt;
         const port = ART.portrait(this.outfitSkin);
         if (port) {
           const hp = 150, w2 = hp * (port.width / port.height);
           c.drawImage(port, (200 - w2) / 2, 158 - hp, w2, hp);
         } else {
-          CharArtAPI.thumb(cv, this.outfitSkin, 1.1);
+          CharArtAPI.thumb(cv, this.outfitSkin, 1.1, { filter: flt });
         }
       } catch (e) { /* 忽略 */ }
       card.appendChild(cv);
@@ -676,7 +682,9 @@ const Panels = {
     const info = document.createElement('div');
     info.className = 'codex-desc';
     info.style.marginTop = '8px';
-    info.textContent = '捏捏跑酷 · Three.js 渲染；角色与场景全部由代码程序化生成，不含任何外部素材。';
+    /* 措辞别写成"不含任何外部素材"——「原声」那首 BGM 是外部 CC0 音频，
+       写死这句话就是在撒谎。准确的说法是"贴图和模型零外部素材"。 */
+    info.textContent = '捏捏跑酷 · Three.js 渲染；角色与场景全部由代码程序化生成，没有一张外部贴图、没有一个外部模型。';
     box.appendChild(info);
   },
 };

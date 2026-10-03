@@ -42,11 +42,17 @@ DIFFICULTIES.forEach(d => { DIFF_MAP[d.id] = d; });
 const MAPS = [
   {
     id: 'city', name: '纸箱街区', sub: '快递箱摞的楼，晾衣绳从头顶过', unlock: 0,
-    prop: 'pylon', ambient: null, mix: 0.35,
+    /* mix 从 0.35 提到 0.72。以前 pal 里的暖色是对的，但混色比例太弱——
+       跟昼夜主题那套灰蓝 `#b9c6d6` 一平均，出来还是 rgb(191,188,182) 的灰盒子，
+       跟"快递箱摞的楼"完全对不上。这个数值是这张图的关键旋钮，别再往下调。 */
+    prop: 'pylon', ambient: null, mix: 0.72,
     pal: {
+      /* 这里以前是灰蓝一片，可这张图叫"纸箱街区"、楼是"快递箱摞的"——
+         配色跟设定对不上，远看就是一堆灰盒子。改成牛皮纸/瓦楞纸的暖黄，
+         跟侧墙、枕木、胶带归到同一个材质家族里。 */
       skyTop: '#3f9fe0', skyBot: '#cfeaff', ground: '#7fae6a',
-      wall: '#9aa3ae', wallDark: '#7a838f', wallTop: '#cfd6de',
-      ballast: '#8e8a7e', bldg: ['#b9c6d6', '#9fb0c4', '#cdd8e4'],
+      wall: '#c9a273', wallDark: '#a67f52', wallTop: '#e3c79c',
+      ballast: '#b9a583', bldg: ['#c9a97a', '#b08b5c', '#d8bd92', '#bd9a86'],
     },
   },
   {
@@ -116,14 +122,22 @@ const MAPS = [
 const MAP_DEF = {};
 MAPS.forEach(m => { MAP_DEF[m.id] = m; });
 
-/* ---------------- 服装衣橱（纯外观，不改变碰撞体积） ---------------- */
+/* ---------------- 服装衣橱（纯外观，不改变碰撞体积） ----------------
+   filter 给 2D 路径（canvas ctx.filter）用；
+   tint   给 3D 路径用 —— WebGL 没法套 CSS 滤镜，只能把同样的观感
+   折算成「色相旋转 + 饱和度/明度倍数 + 泛黄」，逐色去调材质。 */
 const OUTFIT_TINTS = [
-  { id: 'origin', name: '原装', price: 0, filter: 'none', desc: '经典原色' },
-  { id: 'night', name: '夜行', price: 300, filter: 'hue-rotate(200deg) saturate(1.15)', desc: '冷色夜行装' },
-  { id: 'sunset', name: '夕阳', price: 700, filter: 'hue-rotate(-35deg) saturate(1.35) brightness(1.05)', desc: '暖橘夕阳色' },
-  { id: 'neon', name: '霓虹', price: 1500, filter: 'hue-rotate(120deg) saturate(1.6) contrast(1.1)', desc: '赛博霓虹色' },
-  { id: 'ice', name: '冰雪', price: 2200, filter: 'saturate(0.45) brightness(1.18)', desc: '雪原素色' },
-  { id: 'gold', name: '鎏金', price: 3600, filter: 'sepia(0.55) saturate(1.8) brightness(1.06)', desc: '土豪鎏金' },
+  { id: 'origin', name: '原装', price: 0, filter: 'none', tint: null, desc: '经典原色' },
+  { id: 'night', name: '夜行', price: 300, filter: 'hue-rotate(200deg) saturate(1.15)',
+    tint: { hue: 200, sat: 1.15, bri: 0.96 }, desc: '冷色夜行装' },
+  { id: 'sunset', name: '夕阳', price: 700, filter: 'hue-rotate(-35deg) saturate(1.35) brightness(1.05)',
+    tint: { hue: -35, sat: 1.35, bri: 1.05 }, desc: '暖橘夕阳色' },
+  { id: 'neon', name: '霓虹', price: 1500, filter: 'hue-rotate(120deg) saturate(1.6) contrast(1.1)',
+    tint: { hue: 120, sat: 1.6, bri: 1.04 }, desc: '赛博霓虹色' },
+  { id: 'ice', name: '冰雪', price: 2200, filter: 'saturate(0.45) brightness(1.18)',
+    tint: { hue: 0, sat: 0.45, bri: 1.18 }, desc: '雪原素色' },
+  { id: 'gold', name: '鎏金', price: 3600, filter: 'sepia(0.55) saturate(1.8) brightness(1.06)',
+    tint: { hue: 0, sat: 1.8, bri: 1.06, sepia: 0.55 }, desc: '土豪鎏金' },
 ];
 /* 每个角色 6 套 → 12 角色 × 6 = 72 套 */
 const OUTFITS = [];
@@ -136,6 +150,7 @@ CHARS.forEach(ch => {
       name: t.name + '·' + ch.name,
       price: i === 0 ? 0 : Math.round(t.price * (1 + i * 0.1)),
       filter: t.filter,
+      tint: t.tint,
       desc: t.desc,
     });
   });

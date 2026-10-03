@@ -42,7 +42,11 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .btn-primary{background:linear-gradient(180deg,#ffd97a,#f0a52c);border:2px solid #ffeec2;
   box-shadow:0 6px 0 #a85f10,0 12px 22px rgba(0,0,0,.34)}
 .btn-primary:hover{filter:brightness(1.05)}
-.btn-ghost{background:rgba(255,255,255,.16);color:#fff;box-shadow:0 4px 0 rgba(0,0,0,.25)}
+/* 次级按钮。以前是 rgba(255,255,255,.16) 底 + #fff 字，
+   但这货只出现在「白底卡片」里（结算卡 / 暂停卡）——白字压白底，
+   文字直接隐形，看着就是个空白按钮。改成浅底深字，压在卡片上才看得见。 */
+.btn-ghost{background:linear-gradient(180deg,#f3efe6,#e3dccd);color:#6d6353;
+  border:2px solid #fbf8f1;box-shadow:0 4px 0 #c7bda8,0 8px 14px rgba(0,0,0,.14)}
 .btn-danger{background:linear-gradient(180deg,#ff8a84,var(--red));color:#fff}
 .btn-xl{padding:16px 46px;font-size:24px;border-radius:18px;letter-spacing:4px}
 .btn-block{width:100%;margin-top:10px}
@@ -152,21 +156,34 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .pad-roll{background:rgba(75,184,255,.34)}
 
 /* ---------------- 主菜单：车间工作台 ----------------
-   背景不是"通用手游渐变"，是一块铺在桌上的墨绿切割垫：
-   顶部一盏暖台灯打下来，四边是垫子的刻度和方格。 */
+   背景不再是"一块不透明的墨绿切割垫"，而是一层半透的压暗罩——
+   菜单状态下 Pinch3D 一直在背后跑实时车间世界（6m/s 滚动），
+   以前那层实心底把它整个盖住了，白扔一个会动的背景。
+   现在中间留一条透光带：铁轨、枕木、远处的纸盒楼房都在往后跑。
+   上压下压是为了让 logo 和底部导航有对比度。
+   暖台灯的刻度垫纹路保留，但压得很淡，免得两层纹路打架。 */
 #screenMenu{
   background:
-    radial-gradient(118% 72% at 50% -14%, rgba(255,201,124,.24), rgba(255,201,124,0) 60%),
-    radial-gradient(150% 92% at 50% 116%, rgba(0,0,0,.58), rgba(0,0,0,0) 64%),
-    linear-gradient(178deg,#23372e 0%,#1b2b23 44%,#111e19 100%);
+    /* 1. 四周暗角：把实时场景"框"在画面里，别让它平铺到边 */
+    radial-gradient(122% 82% at 50% 46%, rgba(9,17,14,0) 30%, rgba(9,17,14,.52) 72%, rgba(6,11,9,.90) 100%),
+    /* 2. 上下压暗：logo 和底部导航要有对比度，中间留一条透光带 */
+    linear-gradient(180deg,
+      rgba(9,17,14,.94) 0%,
+      rgba(9,17,14,.74) 17%,
+      rgba(9,17,14,.34) 35%,
+      rgba(9,17,14,.30) 56%,
+      rgba(8,14,12,.76) 78%,
+      rgba(6,11,9,.96) 100%),
+    /* 3. 顶部暖台灯 */
+    radial-gradient(132% 78% at 50% -12%, rgba(255,201,124,.26), rgba(255,201,124,0) 62%);
 }
 .menu-bg-deco{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 /* 切割垫的方格网（中心清楚、边缘化开，避免整屏纹路抢戏） */
 .menu-bg-deco::before{
   content:"";position:absolute;inset:0;
   background-image:
-    repeating-linear-gradient(0deg,rgba(196,228,204,.085) 0 1px,transparent 1px 30px),
-    repeating-linear-gradient(90deg,rgba(196,228,204,.085) 0 1px,transparent 1px 30px);
+    repeating-linear-gradient(0deg,rgba(196,228,204,.055) 0 1px,transparent 1px 30px),
+    repeating-linear-gradient(90deg,rgba(196,228,204,.055) 0 1px,transparent 1px 30px);
   -webkit-mask-image:radial-gradient(118% 96% at 50% 42%,#000 26%,rgba(0,0,0,0) 86%);
   mask-image:radial-gradient(118% 96% at 50% 42%,#000 26%,rgba(0,0,0,0) 86%);
 }
@@ -176,31 +193,66 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
   background:
     repeating-linear-gradient(180deg,rgba(232,240,222,.30) 0 1px,transparent 1px 17px) left top/12px 100% no-repeat,
     repeating-linear-gradient(180deg,rgba(232,240,222,.30) 0 1px,transparent 1px 17px) right top/12px 100% no-repeat;
-  opacity:.75;
+  opacity:.6;
+}
+/* 台灯照下来的暖光斑，给角色一块"打光区" */
+.menu-lamp{position:absolute;left:50%;top:0;width:152%;height:74%;transform:translateX(-50%);pointer-events:none;
+  background:radial-gradient(46% 40% at 50% 26%,rgba(255,206,138,.26),rgba(255,206,138,.06) 55%,rgba(255,206,138,0) 76%)}
+/* 飘浮的灰尘。8 个点共用一套 keyframes，靠不同的 left / delay / 时长错开 */
+.menu-dust{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.menu-dust i{position:absolute;bottom:-6%;width:3px;height:3px;border-radius:50%;
+  background:rgba(255,236,200,.55);box-shadow:0 0 4px rgba(255,220,160,.5);
+  animation:dustRise linear infinite}
+@keyframes dustRise{
+  0%{transform:translate3d(0,0,0) scale(.6);opacity:0}
+  12%{opacity:.85}
+  70%{opacity:.5}
+  100%{transform:translate3d(26px,-108vh,0) scale(1.15);opacity:0}
 }
 .menu-inner{position:relative;width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:6px 22px calc(86px + var(--safe-b));overflow:hidden}
-.logo-wrap{text-align:center;margin-top:2px}
-.logo-sub{font-size:11px;font-weight:700;letter-spacing:3px;color:#b9ab8c}
+.logo-wrap{text-align:center;margin-top:2px;position:relative}
+.logo-sub{font-size:11px;font-weight:700;letter-spacing:3px;color:#cbbda0;
+  text-shadow:0 1px 3px rgba(0,0,0,.85)}
 /* 描边不用 -webkit-text-stroke：中文字重到 900 时合成加粗会把笔画描糊。
-   改用多层 text-shadow 铺一圈硬边，出来的效果更像盖在纸上的橡皮图章。 */
+   改用多层 text-shadow 铺一圈硬边，出来的效果更像盖在纸上的橡皮图章。
+   背后现在有实时场景，阴影再多一层远投，字才从画面里"浮"出来。 */
 .logo{font-size:clamp(34px,10vw,54px);line-height:1.06;letter-spacing:5px;color:#fbf3e0;
   text-shadow:
     -2px -2px 0 #2a1d14,2px -2px 0 #2a1d14,-2px 2px 0 #2a1d14,2px 2px 0 #2a1d14,
     -2px 0 0 #2a1d14,2px 0 0 #2a1d14,0 -2px 0 #2a1d14,0 2px 0 #2a1d14,
-    0 5px 0 #b8532a,0 8px 0 rgba(0,0,0,.30),0 15px 26px rgba(0,0,0,.5);
-  font-weight:900;margin:3px 0 0}
-.logo-en{font-size:10px;letter-spacing:7px;font-weight:800;color:#8dab8c;margin-top:3px}
+    0 5px 0 #b8532a,0 8px 0 rgba(0,0,0,.30),0 16px 30px rgba(0,0,0,.72);
+  font-weight:900;margin:3px 0 0;transform:rotate(-1.2deg)}
+.logo-en{font-size:10px;letter-spacing:7px;font-weight:800;color:#a9c6a6;margin-top:5px;
+  display:flex;align-items:center;justify-content:center;gap:9px}
+/* 英文名两边各拉一条虚线，像缝在标签上的走线 */
+.logo-en::before,.logo-en::after{content:"";width:34px;height:1px;
+  background:repeating-linear-gradient(90deg,rgba(190,214,186,.75) 0 4px,transparent 4px 8px)}
 .menu-hero{position:relative;flex:0 0 auto;height:min(27vh,224px);width:min(27vh,224px);display:flex;align-items:center;justify-content:center}
 /* 台灯打在桌面上的那圈光斑 */
-.menu-hero::before{content:"";position:absolute;left:-14%;bottom:0;width:128%;height:52%;border-radius:50%;
-  background:radial-gradient(ellipse at 50% 50%,rgba(255,208,146,.18),rgba(255,208,146,0) 68%)}
+.menu-hero::before{content:"";position:absolute;left:-16%;bottom:0;width:132%;height:56%;border-radius:50%;
+  background:radial-gradient(ellipse at 50% 50%,rgba(255,208,146,.22),rgba(255,208,146,0) 68%)}
+/* 角色脚底垫一只出厂木箱：一来交代世界观，二来给个"展台"，
+   比让角色悬在半空有分量。 */
+.hero-crate{position:absolute;bottom:0;left:50%;transform:translateX(-50%) rotate(-1.2deg);
+  width:64%;height:15%;border-radius:3px;
+  background:linear-gradient(180deg,#c99a5e,#a97a44 58%,#8d6234);
+  box-shadow:0 6px 14px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,226,180,.45),inset 0 -3px 0 rgba(0,0,0,.28)}
+.hero-crate::after{content:"";position:absolute;left:6%;right:6%;top:44%;height:2px;
+  background:rgba(90,58,26,.55);box-shadow:0 4px 0 rgba(90,58,26,.35)}
 .menu-hero canvas{width:100%;height:100%;position:relative;z-index:2}
-.hero-shadow{position:absolute;bottom:4%;left:50%;transform:translateX(-50%);width:58%;height:24px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.5),transparent 70%)}
+.hero-shadow{position:absolute;bottom:5%;left:50%;transform:translateX(-50%);width:58%;height:22px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.55),transparent 70%)}
 .menu-stats{display:flex;gap:7px;flex-wrap:wrap;justify-content:center}
-.stat-pill{display:flex;align-items:center;gap:6px;padding:6px 13px;border-radius:11px;background:rgba(10,20,15,.6);font-weight:800;font-size:12.5px;color:#c6b795;border:1.5px solid rgba(233,220,190,.16);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.stat-pill{display:flex;align-items:center;gap:6px;padding:6px 13px;border-radius:11px;background:rgba(10,20,15,.72);font-weight:800;font-size:12.5px;color:#c6b795;border:1.5px solid rgba(233,220,190,.18);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .stat-pill b{font-size:15px;color:#f6e6c4}
 .menu-btns{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:2px;width:100%}
-.menu-tip{font-size:11.5px;color:#9c9077;text-align:center;font-weight:700;max-width:430px;min-height:16px;line-height:1.45}
+/* 开跑按钮：一层呼吸光晕，把视线钉在这儿 */
+.menu-btns .btn-primary{animation:playBreath 2.6s ease-in-out infinite}
+@keyframes playBreath{
+  0%,100%{box-shadow:0 6px 0 #a85f10,0 12px 22px rgba(0,0,0,.34),0 0 0 0 rgba(255,206,120,.42)}
+  50%{box-shadow:0 6px 0 #a85f10,0 12px 22px rgba(0,0,0,.34),0 0 26px 7px rgba(255,206,120,.30)}
+}
+.menu-tip{font-size:11.5px;color:#a89c84;text-align:center;font-weight:700;max-width:430px;min-height:16px;line-height:1.45;
+  text-shadow:0 1px 3px rgba(0,0,0,.8)}
 
 /* ---------------- 面板（商店/任务/设置） ---------------- */
 .panel{width:min(96vw,720px);max-height:86vh;background:var(--white);border-radius:24px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;border:3px solid #fff}

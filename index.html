@@ -50,6 +50,8 @@
   <!-- ============ 主菜单 ============ -->
   <div id="screenMenu" class="screen">
     <div class="menu-bg-deco"></div>
+    <div class="menu-lamp"></div>
+    <div class="menu-dust" id="menuDust"></div>
     <div class="menu-inner">
       <nav class="top-nav">
         <button class="top-nav-btn" data-open="maps"><i class="ico ico-map"></i><span>出逃路线</span></button>
@@ -67,6 +69,7 @@
 
       <div class="menu-hero">
         <canvas id="heroCanvas" width="360" height="360"></canvas>
+        <div class="hero-crate"></div>
         <div class="hero-shadow"></div>
       </div>
 
@@ -189,7 +192,7 @@
         <button class="panel-close" data-close>&times;</button>
       </div>
       <div class="panel-body" id="rankBody"></div>
-      <div class="panel-note">当前为本机记录；联网排行榜需要后端，后续接入。</div>
+      <div class="panel-note">联网排行榜需要服务端存储；未开启时只显示本机记录。</div>
     </div>
   </div>
 
@@ -215,6 +218,11 @@
       <div class="panel-body">
         <div class="setting-row"><span>音效</span><button class="switch on" id="setSfx"></button></div>
         <div class="setting-row"><span>背景音乐</span><button class="switch on" id="setMusic"></button></div>
+        <div class="setting-row"><span>BGM 音源</span>
+          <div class="seg" id="setMusicSrc">
+            <button data-ms="synth">八音盒</button><button data-ms="file">原声</button>
+          </div>
+        </div>
         <div class="setting-row"><span>震动反馈</span><button class="switch on" id="setVibe"></button></div>
         <div class="setting-row"><span>画质</span>
           <div class="seg" id="setQuality">
@@ -225,7 +233,9 @@
         <div class="panel-sep"></div>
         <button class="btn btn-danger btn-block" id="btnWipe">清空存档（金币/角色/记录）</button>
         <div class="about-text">
-          <b>捏捏跑酷</b> v2.0 · 纯前端 HTML5 游戏，无后端。角色与场景全部由代码程序化生成，没有一张外部贴图、没有一个外部模型，音效由 Web Audio 实时合成。<br>
+          <b>捏捏跑酷</b> v2.0 · 纯前端 HTML5 游戏。角色与场景全部由代码程序化生成，没有一张外部贴图、没有一个外部模型；音效与「八音盒」BGM 由 Web Audio 实时合成。<br>
+          BGM 音源可选「原声」：<i>Retro Sports (Stage 3)</i> — Juhani Junkala / SubspaceAudio，
+          CC0 1.0 公有领域（opengameart.org/content/12-music-loops）。<br>
           世界观：玩具厂倒闭那晚，车间里没做完的小家伙全跑了。它们抢下最后一条出厂传送带，后面追着来封箱的打包机。<br>
           玩法灵感来源：经典三跑道跑酷。
         </div>

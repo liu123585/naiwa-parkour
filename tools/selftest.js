@@ -321,11 +321,11 @@ const test = `
     const mkNode = () => {
       const node = {
         connect() {}, disconnect() {}, start() {}, stop() {},
-        frequency: null, gain: null, Q: null, detune: null,
+        frequency: null, gain: null, Q: null, detune: null, delayTime: null,
         type: 'sine', buffer: null, loop: false,
         setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {},
       };
-      node.frequency = node; node.gain = node; node.Q = node; node.detune = node;
+      node.frequency = node; node.gain = node; node.Q = node; node.detune = node; node.delayTime = node;
       return node;
     };
     window.AudioContext = function () {
@@ -338,6 +338,7 @@ const test = `
       this.createOscillator = mkNode;
       this.createBiquadFilter = mkNode;
       this.createBufferSource = mkNode;
+      this.createDelay = mkNode;
       this.createBuffer = function (ch, len, rate) { return { getChannelData: function () { return new Float32Array(Math.min(64, len)); } }; };
     };
     Sound.ctx = null; Sound.musicTimer = null;
@@ -347,8 +348,54 @@ const test = `
     Sound.coin(3); Sound.jump(); Sound.land(); Sound.roll(); Sound.whoosh(); Sound.power();
     Sound.board(); Sound.boardBreak(); Sound.crash(); Sound.laugh(); Sound.ui(); Sound.deny();
     Sound.buy(); Sound.mission(); Sound.countdown(true); Sound.revive();
-    for (let s = 0; s < 128; s++) Sound.scheduleStep(s, s * 0.1, 0.1);
+    for (let s = 0; s < 256; s++) Sound.scheduleStep(s, s * 0.1, 0.1);
     Sound.stopMusic();
+    Sound.setMusic(false);
+  });
+
+  /* 乐谱自检：八音盒那套谱子是手写的，很容易手滑少写一格或写出调外的音。
+     这里把结构性错误钉死——每小节必须正好 16 个槽、每段 8 小节、
+     旋律音落在合理音域内、循环点上必须是 E7 接回 Am7。 */
+  T('bgm score', function () {
+    const secs = [Sound.melA, Sound.melB];
+    const chords = [Sound.chordsA, Sound.chordsB];
+    for (let s = 0; s < secs.length; s++) {
+      if (secs[s].length !== 8) throw new Error('旋律段 ' + s + ' 不是 8 小节');
+      if (chords[s].length !== 8) throw new Error('和弦段 ' + s + ' 不是 8 小节');
+      for (let b = 0; b < 8; b++) {
+        if (secs[s][b].length !== 16) throw new Error('旋律 ' + s + '/' + b + ' 槽数 ' + secs[s][b].length);
+        for (const n of secs[s][b]) {
+          if (n === 0) continue;
+          if (n < 55 || n > 90) throw new Error('旋律音越界 MIDI ' + n);
+        }
+        const ch = chords[s][b];
+        if (ch.length < 3) throw new Error('和弦 ' + s + '/' + b + ' 音数不足');
+        for (const n of ch) if (n < 40 || n > 72) throw new Error('和弦音越界 MIDI ' + n);
+      }
+    }
+    /* 循环点：B 段最后一小节是 E7（根音 52 = E3，含 G#=56），收束回 A 段的 Am7 */
+    const lastB = Sound.chordsB[7];
+    if (lastB[0] !== 52 || lastB.indexOf(56) < 0) throw new Error('B 段结尾不是 E7，循环接不上');
+    if (Sound.chordsA[0][0] !== 57) throw new Error('A 段开头不是 Am');
+    /* 旋律留白率：太满会吵，太空会散，控制在一个区间里 */
+    let noteCount = 0, slots = 0;
+    for (const sec of secs) for (const bar of sec) for (const n of bar) { slots++; if (n) noteCount++; }
+    const density = noteCount / slots;
+    if (density < 0.12 || density > 0.42) throw new Error('旋律密度 ' + density.toFixed(2) + ' 不在 0.12~0.42');
+  });
+
+  /* BGM 音源回落：这个测试环境里没有 Audio 构造器（也就是"浏览器不支持
+     MP3 解码"的情形），选了原声也必须回落到八音盒，绝不能静音。 */
+  T('bgm source fallback', function () {
+    Sound.setMusic(true);          // 上一个用例结束时把音乐关了，这里先开回来
+    Sound.setMusicSrc('file');
+    if (Sound.bgmSupported()) throw new Error('测试环境不该支持 MP3');
+    if (Sound.activeSrc() !== 'synth') throw new Error('不支持 MP3 时没有回落到 synth');
+    if (!Sound.musicTimer) throw new Error('回落后八音盒没在放');
+    Sound.setMusicSrc('nonsense');
+    if (Sound.musicSrc !== 'synth') throw new Error('非法音源名没有归一到 synth');
+    Sound.setMusicSrc('synth');
+    if (!Sound.musicTimer) throw new Error('切回 synth 后音乐停了');
     Sound.setMusic(false);
   });
 

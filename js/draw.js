@@ -96,6 +96,9 @@ const Renderer = {
     this.f = Math.min(fv, this.W * 0.80);
     this.horizon = this.H * 0.5;
     this.cx = this.W / 2;
+    /* 菜单英雄画布是按 CSS 尺寸缓存的，窗口一变必须让它重新量一次，
+       否则旋转屏幕后封面会按旧尺寸画，拉伸变形。 */
+    if (typeof UI !== 'undefined' && UI) { UI._heroW = 0; UI._heroH = 0; }
     this.skyGrad = null;
   },
 

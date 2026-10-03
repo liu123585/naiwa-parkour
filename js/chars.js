@@ -354,7 +354,7 @@ const CharArt = {
     if (!fn) return;
     try { fn(c, pose); } catch (e) { /* 单个角色绘制异常不影响整局 */ }
   },
-  thumb(canvas, skin, time) {
+  thumb(canvas, skin, time, opts) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = canvas.clientWidth || 120, h = canvas.clientHeight || 104;
     if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
@@ -362,6 +362,11 @@ const CharArt = {
     }
     const c = canvas.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    /* 滤镜必须在这里设，不能由调用方提前设。
+       给 canvas.width 赋值会重置整个 2D 上下文状态（包括 filter），
+       调用方先设好 filter 再进来，上面那次 resize 一执行就被抹掉了——
+       服装商城 6 套衣服因此长得一模一样。 */
+    c.filter = (opts && opts.filter) ? opts.filter : 'none';
     c.clearRect(0, 0, w, h);
     // 首选：AI 原创立绘（观感远好于程序化模型）
     const port0 = (typeof ART !== 'undefined' && ART.portrait) ? ART.portrait(skin) : null;

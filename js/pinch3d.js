@@ -48,6 +48,23 @@ const SKY = {
   nightTop: '#0b1226', nightBot: '#2a3a5e',
 };
 
+/* 顶点按确定性噪声顶出去，做出"手捏出来的"不规则球。
+   用两组不同频率的正弦叠加，够随机又完全可复现（每次刷新长得一样）。 */
+function lumpySphere(r, wSeg, hSeg, amount, seed) {
+  const g = new THREE.SphereGeometry(r, wSeg, hSeg);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const n = Math.sin(x * 9.7 + y * 13.1 + z * 7.3 + seed) * 0.55
+      + Math.sin(x * 21.3 - y * 5.9 + z * 17.7 + seed * 2.3) * 0.45;
+    const k = 1 + n * amount;
+    pos.setXYZ(i, x * k, y * k, z * k);
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
+  return g;
+}
+
 const Pinch3D = {
   ready: false,
   travel: 0, camX: 0, camY: CFG.CAM_Y,
@@ -72,10 +89,12 @@ const Pinch3D = {
     if ('outputColorSpace' in this.renderer) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xb98d64, 24, CFG.FAR * 0.92);
+    this.scene.fog = new THREE.Fog(0xb98d64, 38, CFG.FAR * 0.92);
 
     this.camera = new THREE.PerspectiveCamera(CFG.FOV_Y || 62, 1, 0.28, 320);
     this.camTarget = new THREE.Vector3();
+    /* 打开 layer 1：角色描边 mesh 都挂在这一层，关掉这一层就能整批省掉描边。 */
+    this.camera.layers.enable(1);
 
     /* 打光：一盏暖台灯 + 一片天光，别用三点布光那套棚拍味 */
     this.amb = new THREE.AmbientLight(0xfff1de, 0.72);
@@ -108,6 +127,7 @@ const Pinch3D = {
 
     this.canvas3d = canvas;
     this.ready = true;
+    this.applyDetail();
     if (typeof Chars3D !== 'undefined' && Chars3D.loadModels) Chars3D.loadModels().catch(() => {});
     return true;
   },
@@ -159,6 +179,10 @@ const Pinch3D = {
       cone: new THREE.ConeGeometry(0.5, 1, 14),
       disc: coin,
       sphere: new THREE.SphereGeometry(0.5, 16, 12),
+      /* 毛毡球：球面按确定性噪声往外顶一点。
+         行道树原来就是一颗光滑绿球，一眼"塑料"。顶出凹凸之后，
+         配上 flatShading 才有毛毡团子的手感。 */
+      sphereLump: lumpySphere(0.5, 12, 9, 0.11, 3.1),
       torus: new THREE.TorusGeometry(0.5, 0.14, 8, 20),
       horseshoe: new THREE.TorusGeometry(0.5, 0.16, 8, 22, Math.PI * 1.15),
     };
@@ -361,6 +385,10 @@ const Pinch3D = {
   wz(zr) { return this.travel + zr - CFG.CAM_BACK; },
 
   api: {
+    /* 让外部（game.js 的设置面板）也能触发一次细节开合重判。
+       api 里的东西才会被 Object.assign 到 Renderer 上，所以这里必须有这一层转发。 */
+    applyDetail() { Pinch3D.applyDetail(); },
+
     setCamera(camX, camY) { Pinch3D.camX = camX; Pinch3D.camY = camY; },
 
     proj(x, y, zr) {
@@ -438,15 +466,31 @@ const Pinch3D = {
       R.fill.target.updateMatrixWorld();
 
       /* 天光：以拍摄台背景纸为底（冷调顶 + 暖地平线），再按地图主题染色。
-         染色比例从 14%/12% 提到 34%/30%，各地图的天色差异才看得出来。 */
+         染色比例从 14%/12% 提到 46%/40%。中间那档（34%/30%）实测还是不够：
+         底色 `#2f4257` 太暗太灰，只染三成的话出来是 rgb(56,103,137) 的灰青，
+         整片天跟楼房一样"没颜色"，全屏糊成一团灰米。
+         再往上加又会把"背景纸"这个设定冲掉，46/40 是两头都保住的点。
+         Color 对象按 (夜色档 + 主题 + 两色) 缓存：这几行以前每帧 new 出 5 个
+         THREE.Color（4 个构造 + 1 个 clone），一秒 300 个，纯粹给 GC 添堵。 */
       const night = th.night || 0;
-      const skyTopC = new THREE.Color(SKY.dayTop).lerp(new THREE.Color(SKY.nightTop), night)
-        .lerp(new THREE.Color(th.skyTop), 0.34 * (1 - night));
-      const skyBotC = new THREE.Color(SKY.dayBot).lerp(new THREE.Color(SKY.nightBot), night)
-        .lerp(new THREE.Color(th.skyBot), 0.30 * (1 - night));
-      const fogCol = skyBotC.clone().lerp(skyTopC, 0.30);
+      const nq = Math.round(night * 20);
+      const ck = nq + '|' + th.skyTop + '|' + th.skyBot;
+      let sc = R._skyCols;
+      if (!sc || sc.k !== ck) {
+        const nf = nq / 20;
+        const skyTopC = new THREE.Color(SKY.dayTop).lerp(new THREE.Color(SKY.nightTop), nf)
+          .lerp(new THREE.Color(th.skyTop), 0.46 * (1 - nf));
+        const skyBotC = new THREE.Color(SKY.dayBot).lerp(new THREE.Color(SKY.nightBot), nf)
+          .lerp(new THREE.Color(th.skyBot), 0.40 * (1 - nf));
+        const fogCol = skyBotC.clone().lerp(skyTopC, 0.30);
+        sc = R._skyCols = { k: ck, top: skyTopC, bot: skyBotC, fog: fogCol };
+      }
+      const skyTopC = sc.top, skyBotC = sc.bot, fogCol = sc.fog;
       R.scene.fog.color.copy(fogCol);
-      R.scene.fog.near = 24;
+      /* 雾的近端从 24 推到 38。24 是贴着相机的——相机在 camZ，接触网支架在
+         camZ+14，也就二十来米，等于整个中景一进来就吃雾，远景近景全糊成
+         同一个灰米色，画面毫无纵深。推远之后近处恢复对比，远处照样化开。 */
+      R.scene.fog.near = 38;
       R.scene.fog.far = CFG.FAR * 0.92;
       R.renderer.setClearColor(fogCol, 1);
       R.amb.intensity = 0.72 - night * 0.28;
@@ -455,7 +499,6 @@ const Pinch3D = {
       R.key.color.set(night > 0.5 ? 0xcfe0ff : 0xfff0d2);
       R.fill.intensity = 0.55 + night * 0.22;
 
-      /* 天空：贴一张竖直渐变的远幕 */
       const key = skyTopC.getHexString() + skyBotC.getHexString();
       if (R.skyKey !== key) {
         R.skyKey = key;
@@ -464,11 +507,16 @@ const Pinch3D = {
           const a = skyTopC, b = skyBotC;
           const warm = new THREE.Color('#fff0cf');
           const g = c.createLinearGradient(0, 0, 0, h);
-          /* 地平线落在这张幕布 v≈0.50 的位置，暖光带就压在那一条上 */
+          /* 屏幕能看到的只是这张幕布 y∈[0.15,0.50] 那一段（见下面的尺寸推导），
+             所以停靠点不能按"整张幕布"来分。实测老配方（0/0.26/0.50）里
+             0.26 那档在屏幕往下 10% 就到了，三分之二的天都在往暖色跑，
+             白天也像黄昏。现在把蓝压到 0.30/0.44 才放，0.52 才落地平线的暖光带。
+             地平线（幕布 y=0.50）那一条永远是暖的——那是台灯烤出来的。 */
           g.addColorStop(0, '#' + a.getHexString());
-          g.addColorStop(0.26, '#' + a.clone().lerp(b, 0.42).getHexString());
-          g.addColorStop(0.50, '#' + b.getHexString());
-          g.addColorStop(0.64, '#' + b.clone().lerp(warm, 0.38).getHexString());
+          g.addColorStop(0.30, '#' + a.clone().lerp(b, 0.22).getHexString());
+          g.addColorStop(0.44, '#' + a.clone().lerp(b, 0.58).getHexString());
+          g.addColorStop(0.52, '#' + b.getHexString());
+          g.addColorStop(0.66, '#' + b.clone().lerp(warm, 0.34).getHexString());
           g.addColorStop(1, '#' + b.getHexString());
           c.fillStyle = g; c.fillRect(0, 0, w, h);
         }));
@@ -477,6 +525,14 @@ const Pinch3D = {
           R.skyPlane.material.needsUpdate = true;
         }
       }
+      /* 天空幕布的位置和尺寸是算出来的，不是拍的数：
+         相机俯角 atan((camY-0.62)/18)，竖半视角 31°，幕布在 camZ+155 处，
+         于是屏幕顶端打在幕布上的 y = camY + 155*tan(31° - 俯角)。
+         camY=4.05 时约 61。要让这一段落进渐变的上半区（冷调顶），
+         并且让 0.50 那一档正好压在真正的地平线上（地平线在幕布上的 y 就是
+         相机高度 camY），解出来幕布高 ≈163、中心在 camY。
+         以前是「高 210、中心 24」——顶上一大截冷色整个浪费在屏幕外，
+         可见的那条带正好是渐变最暖的一段，所以白天也糊成一片灰米。 */
       if (!R.skyPlane) {
         R.skyPlane = new THREE.Mesh(
           new THREE.PlaneGeometry(1, 1),
@@ -485,8 +541,8 @@ const Pinch3D = {
         R.skyPlane.renderOrder = -100;
         R.scene.add(R.skyPlane);
       }
-      R.skyPlane.position.set(mx * 0.3, 24, camZ + 155);
-      R.skyPlane.scale.set(460, 210, 1);
+      R.skyPlane.position.set(mx * 0.3, R.camY, camZ + 155);
+      R.skyPlane.scale.set(460, 163, 1);
 
       /* 光晕直接烘在背景纸上（见上面的暖光带），不再单独摆一个方块 */
 
@@ -523,9 +579,17 @@ const Pinch3D = {
       const bedCol = th.ballast || CRAFT.bed;
       const wallCol = th.wall || CRAFT.wall;
       const wallTopCol = th.wallTop || CRAFT.wallTop;
-      R.box(0, -0.16, camZ + FARZ * 0.42, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, bedCol, { flat: true, noCast: true, recv: true, tex: R.grainTex });
+      /* 道床压暗一档：它占了下半屏六成面积，跟枕木一个亮度的话整片地就是
+         一块平板，看不出轨道在哪。 */
+      R.box(0, -0.16, camZ + FARZ * 0.42, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, R.dark(bedCol, 0.86),
+        { flat: true, noCast: true, recv: true, tex: R.grainTex });
 
-      /* ---- 枕木：一根根冰棍棒，比道床浅一档，保证看得见 ---- */
+      /* ---- 枕木：一根根冰棍棒，比道床浅一档，保证看得见 ----
+         CRAFT.stick 从建库第一天就写着"冰棍棒枕木"，可这里一直用的是
+         R.dark(bedCol, 1.18)——跟道床只差一档亮度，加上道床本身就浅，
+         铺出来是一片糊的沙色。改成往冰棍棒色拉 0.62：既留住地图的色系，
+         又把"一根根摆上去"的对比度拉开。 */
+      const slpCol = R.mixHex(bedCol, CRAFT.stick, 0.62);
       const GAP = CFG.SLEEPER_GAP, off = travel % GAP;
       const Q = R.quality === 'low' ? 0.6 : 1;
       const nSlp = Math.round(34 * Q);
@@ -536,7 +600,7 @@ const Pinch3D = {
         const idx = Math.round((z - camZ) / GAP);
         const s = Math.sin(idx * 12.9898) * 43758.5453;
         const j = s - Math.floor(s);
-        R.box(j * 0.18 - 0.09, 0.045, z, CFG.ROAD_HALF * 2 + 0.5 + j * 0.34, 0.16, 0.60, R.dark(bedCol, 1.18),
+        R.box(j * 0.18 - 0.09, 0.045, z, CFG.ROAD_HALF * 2 + 0.5 + j * 0.34, 0.16, 0.60, slpCol,
           { flat: true, ry: (j - 0.5) * 0.04, recv: true });
       }
 
@@ -621,13 +685,21 @@ const Pinch3D = {
           const w = 5.4 + rnd(idx, 2, sgn) * 3.6;
           const bx = sgn * (CFG.WALL_X + 8.2 + rnd(idx, 3, sgn) * 2.4);
           const col = cols[(idx + (sgn > 0 ? 3 : 0)) % cols.length];
+          /* 同一排楼不能全长一个样。亮度抖动量化成 5 档再缓存：
+             直接调 dark() 每帧要 new 一堆 THREE.Color，量化之后
+             组合数是固定的，缓存起来一次就够。 */
+          const jit = Math.round(rnd(idx, 31, sgn) * 4) / 4;
+          R._bldgTint = R._bldgTint || {};
+          const tk = col + jit;
+          let body = R._bldgTint[tk];
+          if (!body) body = R._bldgTint[tk] = R.dark(col, 0.90 + jit * 0.20);
           /* 略微歪一点，别摆得像效果图 */
           const tilt = (rnd(idx, 11, sgn) - 0.5) * 0.022;
           /* 远景只留剪影：这栋楼的窗户/空调/雨棚/天线加起来十几个 draw call，
              而 60 米外它们只有几个像素大——手机上卡住的大头就在这儿。 */
           const far = (z - camZ) > (R.quality === 'low' ? 44 : 66);
 
-          R.box(bx, h / 2, z, w, h, w * 0.82, col, { flat: true, rz: tilt, tex: R.grainTex });
+          R.box(bx, h / 2, z, w, h, w * 0.82, body, { flat: true, rz: tilt, tex: R.grainTex });
           /* 楼顶折边 */
           R.box(bx, h + 0.30, z, w + 0.9, 0.60, w * 0.82 + 0.9, R.dark(col, 0.74), { flat: true, rz: tilt });
           /* 封箱胶带 */
@@ -706,9 +778,9 @@ const Pinch3D = {
         };
       }
       const g1 = tc.g1, g2 = tc.g2;
-      const a = R.take(R.g.sphere, R.matte(g1, { flat: true }));
+      const a = R.take(R.g.sphereLump, R.matte(g1, { flat: true }));
       R.put(a, x, 2.75, z, 2.5, 2.0, 2.5);
-      const b = R.take(R.g.sphere, R.matte(g2, { flat: true }));
+      const b = R.take(R.g.sphereLump, R.matte(g2, { flat: true }));
       R.put(b, x + 0.22, 3.62, z - 0.15, 1.6, 1.4, 1.6);
     },
 
@@ -1050,11 +1122,38 @@ const Pinch3D = {
     },
   },
 
-  /* 颜色微调：把 hex 压暗/提亮，省得每个地方手写一遍 */
+  /* 颜色微调：把 hex 压暗/提亮，省得每个地方手写一遍。
+     带备忘：这个函数每帧会被调上百次（楼身/楼顶折边/空调/雨棚/枕木/车厢接缝…），
+     而实际传进来的 k 基本都是从「固定常量」或「量化到 5 档的抖动」来的，
+     组合数很少。以前每次调用都要 new 一个 THREE.Color 再拼一个字符串，
+     一秒上千次纯属给 GC 添堵——加个表就全免了。
+     k 按千分位取整当键，避免浮点尾数把表撑爆；表上限 512 条，超了整体清空。 */
   dark(hex, k) {
+    const key = hex + '|' + Math.round(k * 1000);
+    const memo = Pinch3D.darkMemo || (Pinch3D.darkMemo = {});
+    const hit = memo[key];
+    if (hit !== undefined) return hit;
+    if (memo._n === undefined) memo._n = 0;
+    if (++memo._n > 512) { for (const p in memo) delete memo[p]; memo._n = 1; }
     const c = new THREE.Color(hex);
     c.multiplyScalar(k);
-    return '#' + c.getHexString();
+    return (memo[key] = '#' + c.getHexString());
+  },
+
+  /* 两色按比例插值。
+     为什么不直接用 draw.js 里的 hexMix：那个只认 `#rrggbb` 字面量，
+     而主题色经过 World.applyMap 之后全是 `rgb(r,g,b)` 字符串，传进去会被
+     parseInt 解成 NaN。这里走 THREE.Color，两种写法都吃得下。
+     跟 dark() 一样带备忘——它会被枕木/侧墙这类每帧上百次的地方调用。 */
+  mixHex(a, b, t) {
+    const key = a + '>' + b + '>' + Math.round(t * 1000);
+    const memo = Pinch3D.mixMemo || (Pinch3D.mixMemo = {});
+    const hit = memo[key];
+    if (hit !== undefined) return hit;
+    if (memo._n === undefined) memo._n = 0;
+    if (++memo._n > 512) { for (const p in memo) delete memo[p]; memo._n = 1; }
+    const c = new THREE.Color(a).lerp(new THREE.Color(b), t);
+    return (memo[key] = '#' + c.getHexString());
   },
 
   /* 后期叠层：暖调 + 暗角 + 胶片颗粒，三样合成一张缓存图。
@@ -1105,15 +1204,57 @@ const Pinch3D = {
     return g;
   },
 
-  /* 自适应画质：帧率掉了就降密度和分辨率 */
+  /* 自适应画质
+     ---------------------------------------------------------
+     旧版两个问题，都是玩家能直接感觉到的：
+     1) 只降不升。回升判据是 avg < 0.014（>71fps），可 60Hz 屏幕上
+        rAF 被 vsync 钉在 16.7ms，这个数永远达不到 —— 设备只要在启动
+        阶段抖一下，就被永久锁在低画质上，之后一直又糊又"卡"。
+     2) 直接改 quality（玩家的画质档位）。玩家自己选的档被系统悄悄改掉，
+        设置面板里显示的还是"中"，对不上。
+     现在只动 resScale 这一个动态旋钮，quality 永远尊重玩家选择；
+     降档看"最差帧"（体感的卡顿来自那几帧长帧，不是平均值），
+     升档要求连续两个窗口都稳，避免在阈值上来回横跳。 */
   tickPerf(dt) {
     if (this.noAutoPerf) return;
     this._ft += dt; this._fn++;
-    if (this._ft < 2.2) return;
+    if (dt > (this._worst || 0)) this._worst = dt;
+    if (this._ft < 2.0) return;
+
     const avg = this._ft / Math.max(1, this._fn);
-    this._ft = 0; this._fn = 0;
-    if (avg > 0.026 && this.quality !== 'low') { this.quality = 'low'; this.resScale = 0.74; }
-    else if (avg > 0.019 && this.quality === 'mid') { this.quality = 'low'; this.resScale = 0.88; }
-    else if (avg < 0.014 && this.quality === 'low') { this.quality = 'mid'; this.resScale = 1; }
+    const worst = this._worst || avg;
+    this._ft = 0; this._fn = 0; this._worst = 0;
+
+    const STEP = 0.09, LO = 0.62, HI = 1.0;
+    let rs = this.resScale || 1;
+
+    if (worst > 0.048 || avg > 0.026) {
+      /* 有肉眼可见的长帧（>48ms）或平均掉到 38fps 以下 → 降一档 */
+      rs = Math.max(LO, rs - STEP);
+      this._good = 0;
+    } else if (worst < 0.026 && avg < 0.0195) {
+      /* 稳定在 51fps 以上，连着两个窗口都稳才慢慢涨回去 */
+      this._good = (this._good || 0) + 1;
+      if (this._good >= 2) { this._good = 0; rs = Math.min(HI, rs + STEP * 0.5); }
+    } else {
+      this._good = 0;
+    }
+
+    if (rs !== this.resScale) {
+      this.resScale = rs;
+      this.applyDetail();
+    }
+  },
+
+  /* 低分辨率/低画质时把"锦上添花"的东西关掉：先关角色描边（省几十个 draw call），
+     再低就关颗粒。都在一个地方判，免得散得到处都是。 */
+  applyDetail() {
+    const rs = this.resScale || 1;
+    const q = this.quality || 'mid';
+    const thin = rs < 0.92 || q === 'low';
+    if (this.camera) {
+      if (thin) this.camera.layers.disable(1);
+      else this.camera.layers.enable(1);
+    }
   },
 };
