@@ -81,7 +81,7 @@ const UI = {
     const q = (id) => document.getElementById(id);
     this.el = {
       hud: q('hud'), hudScore: q('hudScore'), hudCoins: q('hudCoins'), hudDist: q('hudDist'),
-      hudSpeed: q('hudSpeed'), hudTimer: q('hudTimer'), hudShield: q('hudShield'), chipTimer: q('chipTimer'), chipShield: q('chipShield'),
+      hudSpeed: q('hudSpeed'), hudMult: q('hudMult'), hudTimer: q('hudTimer'), hudShield: q('hudShield'), chipTimer: q('chipTimer'), chipShield: q('chipShield'),
       powerBar: q('powerBar'), comboTag: q('comboTag'), toast: q('toast'),
       menu: q('screenMenu'), chars: q('screenChars'), missions: q('screenMissions'),
       settings: q('screenSettings'), pause: q('screenPause'), over: q('screenOver'),
@@ -219,6 +219,11 @@ const UI = {
       const sp = Math.round(g.speed);
       if (sp !== this._sp) { this.el.hudSpeed.textContent = sp; this._sp = sp; }
     }
+    // 实时得分倍率
+    if (this.el.hudMult) {
+      const m = Math.round((g.mult || 1) * 100) / 100;
+      if (m !== this._m) { this.el.hudMult.textContent = 'x' + m; this._m = m; }
+    }
     // 限时挑战倒计时
     if (this.el.hudTimer && this.el.chipTimer) {
       if (g.timeLeft > 0) {
@@ -230,11 +235,11 @@ const UI = {
       }
     }
     if (this.el.hudShield && this.el.chipShield) {
-      if (g.powers.shield > 0) {
-        this.el.chipShield.classList.remove('hidden');
-        this.el.hudShield.textContent = Math.ceil(g.powers.shield);
-      } else {
-        this.el.chipShield.classList.add('hidden');
+      const sh = g.powers.shield > 0 ? Math.ceil(g.powers.shield) : 0;
+      if (sh !== this._sh) {                 // 变了才写 DOM
+        this._sh = sh;
+        if (sh > 0) { this.el.chipShield.classList.remove('hidden'); this.el.hudShield.textContent = sh; }
+        else this.el.chipShield.classList.add('hidden');
       }
     }
 
@@ -246,6 +251,9 @@ const UI = {
     if (pw.x2 > 0) items.push(['x2', '双倍金币', pw.x2 / g.powerDur('x2')]);
     if (pw.shoe > 0) items.push(['shoe', '超级跑鞋', pw.shoe / g.powerDur('shoe')]);
     if (p.boardT > 0) items.push(['board', '悬浮板', p.boardT / g.powerDur('board')]);
+    if (pw.shield > 0) items.push(['shield', '护盾', pw.shield / g.powerDur('shield')]);
+    if (pw.dash > 0) items.push(['dash', '无敌冲刺', pw.dash / g.powerDur('dash')]);
+    if (pw.slow > 0) items.push(['slow', '时间减速', pw.slow / g.powerDur('slow')]);
     const key = items.map(i => i[0]).join(',');
     if (key !== this._powerKey) {
       this._powerKey = key;
@@ -258,16 +266,25 @@ const UI = {
         if (bars[i]) this._powerEls[it[0]] = bars[i];
       });
     }
+    // 道具条 / 悬浮板按钮：12Hz 更新一次就够。
+    // 每帧写 style 与 class 会让浏览器每帧重算样式，手机上白白吃掉帧。
+    if ((g.time || 0) - (this._hudT || 0) < 0.08) return;
+    this._hudT = g.time || 0;
     items.forEach(it => {
       const b = this._powerEls[it[0]];
       if (b) b.style.width = Utils.clamp(it[2], 0, 1) * 100 + '%';
     });
-    // 悬浮板按钮
-    const bb = document.getElementById('btnBoard');
+    // 悬浮板按钮（元素缓存下来，别每帧 getElementById）
+    if (!this._bbEl) this._bbEl = document.getElementById('btnBoard');
+    const bb = this._bbEl;
     if (bb) {
       const usable = Store.data.boardCount > 0 && p.boardT <= 0;
-      bb.classList.toggle('dead', !usable);
-      bb.dataset.count = String(Store.data.boardCount);
+      const sig = (usable ? '1' : '0') + Store.data.boardCount;
+      if (sig !== this._bbSig) {
+        this._bbSig = sig;
+        bb.classList.toggle('dead', !usable);
+        bb.dataset.count = String(Store.data.boardCount);
+      }
     }
   },
 

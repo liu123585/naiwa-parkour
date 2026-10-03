@@ -185,15 +185,39 @@ const Pinch3D = {
     }));
   },
   textured(t, color, opts) {
-    const key = 't' + (t.uuid || '') + color;
+    const key = 't' + (t.uuid || '') + color + (opts && opts.flat ? 'f' : '');
     if (!this._tc) this._tc = {};
     if (this._tc[key]) return this._tc[key];
     return (this._tc[key] = new THREE.MeshLambertMaterial({
       map: t, color: new THREE.Color(color || '#ffffff'),
+      flatShading: !!(opts && opts.flat),
       transparent: !!(opts && opts.transparent),
       opacity: opts && opts.opacity !== undefined ? opts.opacity : 1,
       side: opts && opts.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
     }));
+  },
+
+  /* 纸纹颗粒：给大面积纯色块铺一层细碎杂色。
+     没有它，道床/墙面/楼房就是三块干净的平色，一眼"批量生成的 CG"。 */
+  get grainTex() {
+    if (this._grainT) return this._grainT;
+    const t = this.tex(this.mkCanvas(96, 96, (c, w, h) => {
+      c.fillStyle = '#ffffff'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 1100; i++) {
+        const a = 0.04 + Math.random() * 0.12;
+        c.fillStyle = (i % 3 ? 'rgba(0,0,0,' : 'rgba(255,255,255,') + a.toFixed(3) + ')';
+        c.fillRect(Math.random() * w, Math.random() * h, 0.6 + Math.random() * 1.7, 0.6 + Math.random() * 1.7);
+      }
+      for (let i = 0; i < 14; i++) {          // 几道纸纤维
+        c.strokeStyle = 'rgba(0,0,0,.045)'; c.lineWidth = 0.7;
+        const y = Math.random() * h;
+        c.beginPath(); c.moveTo(0, y); c.lineTo(w, y + (Math.random() - 0.5) * 5); c.stroke();
+      }
+    }));
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(5, 5);
+    this._grainT = t;
+    return t;
   },
 
   /* ---------------- 网格池 ---------------- */
@@ -219,12 +243,79 @@ const Pinch3D = {
     m.rotation.set(rx || 0, ry || 0, rz || 0);
     return m;
   },
-  /* 一个盒子（宽高深 + 可选绕 Y / 绕 X 旋转） */
+  /* ---------------- 盒子的实例化批次 ----------------
+     全场 80% 的绘制都是盒子（枕木、挡板、楼房、窗户、支架…）。自研池子
+     一个盒子就是一次 draw call，手机上 400+ 次直接卡住，而且三角面才 3 万，
+     瓶颈完全在 call 数上。所以按材质类型分成 4 个 InstancedMesh：
+     每帧只写实例矩阵与实例色，绘制次数从四百多降到个位数。
+     颜色走 instanceColor，贴图共用 grainTex。
+     带 opacity 的（水洼、玻璃）会退化回原来的池子路径，全场只有三四处。 */
+  BOXCAP: 2600,
+  boxBatch() {
+    if (this._bb) return this._bb;
+    const defs = [
+      ['flat', new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true })],
+      ['smooth', new THREE.MeshLambertMaterial({ color: 0xffffff })],
+      ['unlit', new THREE.MeshBasicMaterial({ color: 0xffffff })],
+      ['tex', new THREE.MeshLambertMaterial({ map: this.grainTex, color: 0xffffff, flatShading: true })],
+    ];
+    this._bb = {};
+    for (const d of defs) {
+      const im = new THREE.InstancedMesh(this.g.cube, d[1], this.BOXCAP);
+      if (THREE.DynamicDrawUsage !== undefined) im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.frustumCulled = false;          // 自己按距离剔除，别让整批被整体裁掉
+      im.count = 0;
+      im.matrixAutoUpdate = false;
+      this.dynRoot.add(im);
+      this._bb[d[0]] = { mesh: im, n: 0 };
+    }
+    this._m4 = new THREE.Matrix4();
+    this._q4 = new THREE.Quaternion();
+    this._e3 = new THREE.Euler();
+    this._p3 = new THREE.Vector3();
+    this._s3 = new THREE.Vector3();
+    this._c3 = new THREE.Color();
+    return this._bb;
+  },
+  boxReset() {
+    const B = this.boxBatch();
+    for (const k in B) { B[k].n = 0; B[k].mesh.count = 0; }
+  },
+  boxFlush() {
+    const B = this._bb;
+    if (!B) return;
+    for (const k in B) {
+      const s = B[k];
+      s.mesh.count = s.n;
+      if (s.n > 0) {
+        s.mesh.instanceMatrix.needsUpdate = true;
+        if (s.mesh.instanceColor) s.mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  },
+
+  /* 一个盒子（宽高深 + 可选绕各轴旋转） */
   box(x, y, z, w, h, d, color, opts) {
     opts = opts || {};
-    const m = this.take(this.g.cube, opts.tex ? this.textured(opts.tex, color, opts) : (opts.unlit ? this.unlit(color, opts) : this.matte(color, opts)));
-    this.put(m, x, y, z, w, h, d, opts.rx || 0, opts.ry || 0, opts.rz || 0);
-    return m;
+    const exotic = opts.opacity !== undefined || (opts.tex && opts.tex !== this.grainTex);
+    if (exotic) {                        // 带透明度 / 特殊贴图：退回池子路径
+      const m = this.take(this.g.cube, opts.tex ? this.textured(opts.tex, color, opts) : (opts.unlit ? this.unlit(color, opts) : this.matte(color, opts)));
+      this.put(m, x, y, z, w, h, d, opts.rx || 0, opts.ry || 0, opts.rz || 0);
+      return m;
+    }
+    const B = this.boxBatch();
+    const s = B[opts.unlit ? 'unlit' : (opts.tex ? 'tex' : (opts.flat ? 'flat' : 'smooth'))];
+    const i = s.n;
+    if (i >= this.BOXCAP) return null;   // 到顶就丢，宁可少画也不崩
+    this._e3.set(opts.rx || 0, opts.ry || 0, opts.rz || 0);
+    this._q4.setFromEuler(this._e3);
+    this._p3.set(x, y, z);
+    this._s3.set(w, h, d);
+    this._m4.compose(this._p3, this._q4, this._s3);
+    s.mesh.setMatrixAt(i, this._m4);
+    s.mesh.setColorAt(i, this._c3.set(color));
+    s.n++;
+    return s.mesh;
   },
   tube(x, y, z, r, h, color, seg, opts) {
     opts = opts || {};
@@ -315,8 +406,9 @@ const Pinch3D = {
       R.camera.aspect = Renderer.W / Math.max(1, Renderer.H);
       R.camera.updateProjectionMatrix();
 
-      /* 池与角色清空 */
+      /* 池与角色清空，盒子实例计数也归零 */
       R.pool.used = 0;
+      R.boxReset();
       R.charRoot.clear();
 
       /* 相机。注意 x 取负：场景整体被 scale.x=-1 镜像过，
@@ -342,14 +434,13 @@ const Pinch3D = {
       R.fill.target.position.set(mx, 0, camZ + 6);
       R.fill.target.updateMatrixWorld();
 
-      /* 天光：不用主题那套蓝（出来就是发白的通用手游天），
-         改用拍摄台背景纸——冷调顶 + 暖地平线，中间一层暖雾。
-         地图主题只往上染 14%，各地风味还留得住。 */
+      /* 天光：以拍摄台背景纸为底（冷调顶 + 暖地平线），再按地图主题染色。
+         染色比例从 14%/12% 提到 34%/30%，各地图的天色差异才看得出来。 */
       const night = th.night || 0;
       const skyTopC = new THREE.Color(SKY.dayTop).lerp(new THREE.Color(SKY.nightTop), night)
-        .lerp(new THREE.Color(th.skyTop), 0.14 * (1 - night));
+        .lerp(new THREE.Color(th.skyTop), 0.34 * (1 - night));
       const skyBotC = new THREE.Color(SKY.dayBot).lerp(new THREE.Color(SKY.nightBot), night)
-        .lerp(new THREE.Color(th.skyBot), 0.12 * (1 - night));
+        .lerp(new THREE.Color(th.skyBot), 0.30 * (1 - night));
       const fogCol = skyBotC.clone().lerp(skyTopC, 0.30);
       R.scene.fog.color.copy(fogCol);
       R.scene.fog.near = 24;
@@ -423,8 +514,13 @@ const Pinch3D = {
         R.box(0, -0.014, lz, 130, 0.02, 0.10, CRAFT.matLine, { unlit: true, opacity: 0.42, noCast: true });
       }
 
-      /* ---- 道床 ---- */
-      R.box(0, -0.16, camZ + FARZ * 0.42, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, CRAFT.bed, { flat: true, noCast: true, recv: true });
+      /* ---- 道床 ----
+         地图配色真正驱动场景：道床/枕木/侧墙都跟着当前地图走。
+         （以前这几处颜色全写死在 CRAFT 里，所以 8 张地图跑起来几乎一个样） */
+      const bedCol = th.ballast || CRAFT.bed;
+      const wallCol = th.wall || CRAFT.wall;
+      const wallTopCol = th.wallTop || CRAFT.wallTop;
+      R.box(0, -0.16, camZ + FARZ * 0.42, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, bedCol, { flat: true, noCast: true, recv: true, tex: R.grainTex });
 
       /* ---- 枕木：一根根冰棍棒，比道床浅一档，保证看得见 ---- */
       const GAP = CFG.SLEEPER_GAP, off = travel % GAP;
@@ -437,7 +533,7 @@ const Pinch3D = {
         const idx = Math.round((z - camZ) / GAP);
         const s = Math.sin(idx * 12.9898) * 43758.5453;
         const j = s - Math.floor(s);
-        R.box(j * 0.18 - 0.09, 0.045, z, CFG.ROAD_HALF * 2 + 0.5 + j * 0.34, 0.16, 0.60, CRAFT.stick,
+        R.box(j * 0.18 - 0.09, 0.045, z, CFG.ROAD_HALF * 2 + 0.5 + j * 0.34, 0.16, 0.60, R.dark(bedCol, 1.18),
           { flat: true, ry: (j - 0.5) * 0.04, recv: true });
       }
 
@@ -460,11 +556,11 @@ const Pinch3D = {
           const cx = sgn * CFG.WALL_X;
           const idx = i + Math.floor(travel / SEGL);
           /* 墙体 */
-          R.box(cx, 0.62, z - SEGL / 2, 0.16, 1.24, SEGL, CRAFT.wall, { flat: true });
+          R.box(cx, 0.62, z - SEGL / 2, 0.16, 1.24, SEGL, wallCol, { flat: true, tex: R.grainTex });
           /* 顶边压条 */
-          R.box(cx, 1.30, z - SEGL / 2, 0.52, 0.19, SEGL, CRAFT.wallTop, { flat: true });
+          R.box(cx, 1.30, z - SEGL / 2, 0.52, 0.19, SEGL, wallTopCol, { flat: true });
           /* 两块纸板接缝 */
-          R.box(cx - sgn * 0.09, 0.62, z - SEGL / 2, 0.02, 1.22, 0.07, R.dark(CRAFT.wall, 0.70), { unlit: true });
+          R.box(cx - sgn * 0.09, 0.62, z - SEGL / 2, 0.02, 1.22, 0.07, R.dark(wallCol, 0.70), { unlit: true });
           /* 偶尔来一截封箱胶带 */
           if (idx % 3 === 1) {
             R.box(cx - sgn * 0.09, 1.00, z - SEGL / 2 + 2.6, 0.02, 0.32, 1.7, CRAFT.tape, { unlit: true });
@@ -500,7 +596,8 @@ const Pinch3D = {
       const Q = R.quality === 'low' ? 0.55 : 1;
       const STEP = 12, n = Math.round(16 * Q);
       const FARZ = Math.min(CFG.FAR * 0.85, 165);
-      const cols = CRAFT.paper;
+      /* 楼房色板也跟着地图走，换图时天际线整个变味 */
+      const cols = (th.bldg && th.bldg.length) ? th.bldg : CRAFT.paper;
       const night = th.night || 0;
       const rnd = (idx, k, sgn) => {
         const s = Math.sin((idx * 37.31 + k * 11.7 + (sgn > 0 ? 0.37 : 0)) * 12.9898) * 43758.5453;
@@ -523,16 +620,19 @@ const Pinch3D = {
           const col = cols[(idx + (sgn > 0 ? 3 : 0)) % cols.length];
           /* 略微歪一点，别摆得像效果图 */
           const tilt = (rnd(idx, 11, sgn) - 0.5) * 0.022;
+          /* 远景只留剪影：这栋楼的窗户/空调/雨棚/天线加起来十几个 draw call，
+             而 60 米外它们只有几个像素大——手机上卡住的大头就在这儿。 */
+          const far = (z - camZ) > (R.quality === 'low' ? 44 : 66);
 
-          R.box(bx, h / 2, z, w, h, w * 0.82, col, { flat: true, rz: tilt });
+          R.box(bx, h / 2, z, w, h, w * 0.82, col, { flat: true, rz: tilt, tex: R.grainTex });
           /* 楼顶折边 */
           R.box(bx, h + 0.30, z, w + 0.9, 0.60, w * 0.82 + 0.9, R.dark(col, 0.74), { flat: true, rz: tilt });
           /* 封箱胶带 */
-          if (rnd(idx, 12, sgn) > 0.45) {
+          if (!far && rnd(idx, 12, sgn) > 0.45) {
             R.box(bx - sgn * (w / 2 + 0.03), h * 0.5, z, 0.04, h * 0.88, 0.34, CRAFT.tape, { unlit: true });
           }
           /* 窗户：贴上去的小纸片 */
-          const rows = Math.max(2, Math.min(5, Math.floor(h / 3.2)));
+          const rows = far ? 0 : Math.max(2, Math.min(5, Math.floor(h / 3.2)));
           for (let r2 = 0; r2 < rows; r2++) {
             for (let cix = 0; cix < 3; cix++) {
               if (rnd(idx * 7 + r2 * 3 + cix, 9, sgn) < 0.42) continue;
@@ -541,12 +641,38 @@ const Pinch3D = {
                 0.05, 1.4, w * 0.17, lit ? '#ffe6a8' : '#5d6a7a', { unlit: lit });
             }
           }
+          /* ---- 手工细节：一楼雨棚店门 / 空调外机 / 屋顶杂物 / 天线 ----
+             没有这些，每栋楼都是同一个方盒子，一眼就是批量生成的街景。
+             但只发给近景楼：远景十几个 call 换不来几个像素。 */
+          if (far) { /* 远景跳过 */ } else {
+          if (rnd(idx, 21, sgn) > 0.42) {
+            R.box(bx - sgn * (w / 2 + 0.30), 2.10, z, 0.62, 0.10, w * 0.70,
+              rnd(idx, 22, sgn) > 0.5 ? CRAFT.tape : '#c9553f', { flat: true });
+          }
+          if (rnd(idx, 23, sgn) > 0.50) {
+            R.box(bx - sgn * (w / 2 + 0.03), 0.95, z + w * 0.16, 0.05, 1.9, w * 0.22, '#3f4a58', { unlit: true });
+          }
+          const nac = 1 + Math.floor(rnd(idx, 24, sgn) * 3);
+          for (let a = 0; a < nac; a++) {
+            const ay = 2.5 + rnd(idx * 13 + a, 25, sgn) * Math.max(1.2, h - 3.6);
+            const az = z - w * 0.26 + rnd(idx * 17 + a, 26, sgn) * w * 0.52;
+            R.box(bx - sgn * (w / 2 + 0.16), ay, az, 0.32, 0.44, 0.64, R.dark(col, 0.80), { flat: true });
+          }
+          const rk = rnd(idx, 27, sgn);
+          if (rk > 0.42) R.box(bx + sgn * 1.2, h + 1.05, z, 1.3, 1.1, 1.3, R.dark(col, 0.72), { flat: true });
+          if (rk > 0.72) R.tube(bx - sgn * 1.4, h + 1.5, z + 1.2, 0.20, 2.3, '#a8b0ba', 8, { flat: true });
+          if (rnd(idx, 28, sgn) > 0.62) {
+            const antH = 1.6 + rnd(idx, 29, sgn) * 2.2;
+            R.tube(bx, h + 0.6 + antH / 2, z, 0.05, antH, '#8d95a0', 8, { flat: true });
+          }
+          }
+
           /* 后排更高的楼，撑一下纵深 */
           if (rnd(idx, 4, sgn) > 0.34) {
             const h2 = h + 6 + rnd(idx, 5, sgn) * 11;
             R.box(bx + sgn * 8.0, h2 / 2, z + 3.2, w * 1.15, h2, w * 0.95, R.dark(col, 0.86), { flat: true });
           }
-          if (rnd(idx, 6, sgn) > 0.42) R.api.drawTree(sgn * (CFG.WALL_X + 2.3), z + 5.2, rnd(idx, 7, sgn));
+          if (!far && rnd(idx, 6, sgn) > 0.42) R.api.drawTree(sgn * (CFG.WALL_X + 2.3), z + 5.2, rnd(idx, 7, sgn));
         }
 
         /* 路灯：回形针灯杆 + 小灯泡 */
@@ -566,8 +692,17 @@ const Pinch3D = {
     drawTree(x, z, seed) {
       const R = Pinch3D;
       R.tube(x, 1.05, z, 0.15, 2.1, '#9a7448', 8, { flat: true });
-      const g1 = '#' + new THREE.Color().setHSL(0.29 + seed * 0.05, 0.42, 0.30 + seed * 0.10).getHexString();
-      const g2 = '#' + new THREE.Color().setHSL(0.29 + seed * 0.05, 0.44, 0.38 + seed * 0.10).getHexString();
+      /* 颜色按 seed 分档缓存：原来每棵树每帧都 new 两个 THREE.Color，长期跑会 GC 抖动 */
+      const q = Math.round(Math.max(0, Math.min(1, seed)) * 8) / 8;
+      R._treeCols = R._treeCols || {};
+      let tc = R._treeCols[q];
+      if (!tc) {
+        tc = R._treeCols[q] = {
+          g1: '#' + new THREE.Color().setHSL(0.29 + q * 0.05, 0.42, 0.30 + q * 0.10).getHexString(),
+          g2: '#' + new THREE.Color().setHSL(0.29 + q * 0.05, 0.44, 0.38 + q * 0.10).getHexString(),
+        };
+      }
+      const g1 = tc.g1, g2 = tc.g2;
       const a = R.take(R.g.sphere, R.matte(g1, { flat: true }));
       R.put(a, x, 2.75, z, 2.5, 2.0, 2.5);
       const b = R.take(R.g.sphere, R.matte(g2, { flat: true }));
@@ -744,6 +879,17 @@ const Pinch3D = {
           for (const s of [-1, 1]) R.box(x + s * 1.6, 2.0, z, 0.24, 4.0, 0.24, '#6b717a', { flat: true });
           R.box(x, 4.0, z, 3.6, 0.30, 0.30, '#757c86', { flat: true });
           break;
+        case 'turnstile': /* 闸机：齐人高，跳不过也滑不过，只能变道 */
+          for (const s of [-1, 0, 1]) R.box(x + s * 0.42, 1.10, z, 0.16, 2.20, 0.16, '#8d939c', { flat: true });
+          R.box(x, 2.24, z, 1.34, 0.22, 0.30, '#cc4a3c', { flat: true });
+          R.box(x, 0.06, z, 1.34, 0.12, 0.42, '#6b717a', { flat: true });
+          R.box(x, 1.08, z - 0.03, 0.88, 0.10, 0.10, '#f2ece0', { flat: true });
+          break;
+        case 'sweeper':   /* 横扫杆：底座 + 来回摆动的横杆 */
+          R.box(x, 0.10, z, 0.92, 0.20, 0.62, '#7a818b', { flat: true });
+          R.box(x, 0.55, z, 0.22, 1.10, 0.22, '#e0b23a', { flat: true });
+          R.box(x, 1.00, z, 2.20, 0.16, 0.16, '#cc4a3c', { flat: true });
+          break;
         default:
           R.box(x, 0.5, z, 1.6, 1.0, 0.4, '#cc6b4d', { flat: true });
       }
@@ -762,7 +908,7 @@ const Pinch3D = {
       m.rotation.set(0, o.spin || 0, 0);
     },
 
-    /* ---- 道具：红色磁铁 / 蓝色护盾 ---- */
+    /* ---- 道具：每种道具一个专属造型，方便一眼认出来 ---- */
     drawPower(o) {
       if (!Pinch3D.ready) return;
       const R = Pinch3D;
@@ -778,7 +924,25 @@ const Pinch3D = {
           const t = R.take(R.g.cyl, R._tipMat || (R._tipMat = new THREE.MeshPhongMaterial({ color: 0xd8dde4, shininess: 80, specular: 0xffffff })));
           R.put(t, o.x + s * 0.31, y - 0.34, z, 0.18, 0.18, 0.18);
         }
-      } else {
+      } else if (o.kind === 'jet') {          /* 喷射背包：蓝色气瓶 + 喷焰 */
+        R.put(R.take(R.g.cyl, R.matte('#4f9dff', { flat: true })), o.x, y, z, 0.32, 0.64, 0.32);
+        R.put(R.take(R.g.sphere, R.matte('#a9d1ff', { flat: true })), o.x, y + 0.34, z, 0.30, 0.30, 0.30);
+        R.put(R.take(R.g.cone, R.unlit('#ffd34d')), o.x, y - 0.48, z, 0.28, 0.36, 0.28, Math.PI, 0, 0);
+      } else if (o.kind === 'x2') {           /* 双倍金币：金色方片 */
+        R.put(R.take(R.g.cube, R.matte('#f5b21a', { flat: true })), o.x, y, z, 0.58, 0.58, 0.24);
+        R.put(R.take(R.g.cube, R.unlit('#fff6d0')), o.x, y, z + 0.15, 0.42, 0.10, 0.03);
+      } else if (o.kind === 'shoe') {         /* 超级跑鞋：橙色鞋身 + 白底 */
+        R.put(R.take(R.g.cube, R.matte('#ff8b2b', { flat: true })), o.x, y + 0.06, z, 0.68, 0.30, 0.32);
+        R.put(R.take(R.g.cube, R.unlit('#f2ece0')), o.x, y - 0.18, z, 0.72, 0.09, 0.34);
+      } else if (o.kind === 'board') {        /* 悬浮板：粉色薄板 */
+        R.put(R.take(R.g.cube, R.matte('#ff4fb0', { flat: true })), o.x, y, z, 0.88, 0.13, 0.36);
+      } else if (o.kind === 'dash') {         /* 无敌冲刺：朝前的红色箭头 */
+        R.put(R.take(R.g.cone, R.matte('#ff2d5e', { flat: true })), o.x, y, z, 0.46, 0.62, 0.46, Math.PI / 2, 0, 0);
+        R.put(R.take(R.g.cube, R.unlit('#ffb3c4')), o.x, y - 0.42, z + 0.26, 0.16, 0.16, 0.16);
+      } else if (o.kind === 'slow') {         /* 时间减速：紫色圆环 */
+        R.put(R.take(R.g.torus, R.matte('#7f5bff', { flat: true })), o.x, y, z, 0.64, 0.64, 0.64);
+        R.put(R.take(R.g.cyl, R.unlit('#c9b8ff')), o.x, y + 0.02, z, 0.10, 0.46, 0.10);
+      } else {                                /* 护盾：蓝色半透明泡泡 */
         const blue = R._shieldMat || (R._shieldMat = new THREE.MeshPhongMaterial({
           color: 0x2f8bff, transparent: true, opacity: 0.62, shininess: 110, specular: 0xffffff, depthWrite: false,
         }));
@@ -830,6 +994,10 @@ const Pinch3D = {
       for (let i = p.used; i < p.all.length; i++) {
         if (p.all[i].visible) p.all[i].visible = false;
       }
+      /* 提交盒子实例的时机必须在这里，不能放在 drawSky 末尾：
+         车厢 / 障碍 / 金币 / 粒子是 drawSky 之后才发出来的（game.js render 里），
+         早一步提交它们会被漏掉，整帧都画不出来。就在出图前一刻提交。 */
+      R.boxFlush();
       R.renderer.render(R.scene, R.camera);
     },
 
@@ -867,13 +1035,15 @@ const Pinch3D = {
         c.restore();
       }
 
-      /* 暖调 + 暗角：整体往"台灯下拍出来的微缩模型"上靠一点 */
-      c.save();
-      c.fillStyle = 'rgba(255,198,128,' + (0.055 - (th.night || 0) * 0.02).toFixed(3) + ')';
-      c.fillRect(0, 0, W, H);
-      c.fillStyle = Pinch3D.vignette();
-      c.fillRect(0, 0, W, H);
-      c.restore();
+      /* 暖调 + 暗角 + 颗粒：整体往"台灯下拍出来的微缩模型"上靠一点。
+         三合一缓存图 + 单次 drawImage，掉帧时（fxLow）连颗粒一起省掉。 */
+      const ov = Pinch3D.overlay(th.night || 0, !Renderer.fxLow);
+      if (ov) {
+        c.save();
+        c.translate((Math.random() * 4 - 2) | 0, (Math.random() * 4 - 2) | 0);
+        c.drawImage(ov, 0, 0, W, H);
+        c.restore();
+      }
     },
   },
 
@@ -882,6 +1052,40 @@ const Pinch3D = {
     const c = new THREE.Color(hex);
     c.multiplyScalar(k);
     return '#' + c.getHexString();
+  },
+
+  /* 后期叠层：暖调 + 暗角 + 胶片颗粒，三样合成一张缓存图。
+     原来每帧要三次全屏填充（其中一次是 pattern fill），手机上纯属白掉帧；
+     现在一次 drawImage 就画完。整张图每帧随机偏移 ±2 像素，颗粒就有了手摇的抖动感，
+     暗角偏移两像素肉眼看不出来。 */
+  overlay(night, withGrain) {
+    const key = (withGrain ? 'g' : 'n') + ((night || 0) * 20 | 0) + Renderer.W + 'x' + Renderer.H;
+    if (this._ovKey === key && this._ov) return this._ov;
+    try {
+      const W = Math.max(1, Math.round(Renderer.W / Renderer.dpr));
+      const H = Math.max(1, Math.round(Renderer.H / Renderer.dpr));
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const g2 = cv.getContext('2d');
+      g2.fillStyle = 'rgba(255,198,128,' + (0.055 - (night || 0) * 0.02).toFixed(3) + ')';
+      g2.fillRect(0, 0, W, H);
+      const rg = g2.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.30, W / 2, H * 0.52, Math.max(W, H) * 0.80);
+      rg.addColorStop(0, 'rgba(0,0,0,0)');
+      rg.addColorStop(0.62, 'rgba(36,22,10,0.10)');
+      rg.addColorStop(1, 'rgba(28,16,6,0.36)');
+      g2.fillStyle = rg;
+      g2.fillRect(0, 0, W, H);
+      if (withGrain) {
+        const n = (W * H) / 70;
+        for (let i = 0; i < n; i++) {
+          const v = Math.random();
+          g2.fillStyle = 'rgba(' + (v > 0.5 ? '255,255,255,' : '0,0,0,') + (0.03 + Math.random() * 0.07).toFixed(3) + ')';
+          g2.fillRect(Math.random() * W, Math.random() * H, 1.3, 1.3);
+        }
+      }
+      this._ov = cv; this._ovKey = key;
+      return cv;
+    } catch (e) { return null; }
   },
 
   /* 暗角：缓存的径向渐变，尺寸变了才重建 */
@@ -905,8 +1109,8 @@ const Pinch3D = {
     if (this._ft < 2.2) return;
     const avg = this._ft / Math.max(1, this._fn);
     this._ft = 0; this._fn = 0;
-    if (avg > 0.034 && this.quality !== 'low') { this.quality = 'low'; this.resScale = 0.72; }
-    else if (avg > 0.024 && this.quality === 'mid') { this.quality = 'low'; this.resScale = 0.85; }
-    else if (avg < 0.018 && this.quality === 'low') { this.quality = 'mid'; this.resScale = 1; }
+    if (avg > 0.026 && this.quality !== 'low') { this.quality = 'low'; this.resScale = 0.74; }
+    else if (avg > 0.019 && this.quality === 'mid') { this.quality = 'low'; this.resScale = 0.88; }
+    else if (avg < 0.014 && this.quality === 'low') { this.quality = 'mid'; this.resScale = 1; }
   },
 };

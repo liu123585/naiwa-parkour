@@ -168,6 +168,8 @@ const Renderer = {
       x2: { col: '#ffd34d', col2: '#fff3c0', txt: 'x2' }, shoe: { col: '#ff8b2b', col2: '#ffc389' },
       board: { col: '#ff4fb0', col2: '#ffb1dd' },
       shield: { col: '#17c9c0', col2: '#a6f6f0' },
+      dash: { col: '#ff2d5e', col2: '#ffb3c4' },
+      slow: { col: '#7f5bff', col2: '#c9b8ff' },
     };
     for (const k in powers) {
       const p = powers[k];
@@ -841,6 +843,39 @@ const Renderer = {
         const mix = (p, q, t) => ({ sx: p.sx + (q.sx - p.sx) * t, sy: p.sy + (q.sy - p.sy) * t });
         this.fillQuad([mix(A, D, 0.3), mix(B, C, 0.3), mix(B, C, 0.62), mix(A, D, 0.62)], '#ffd34d');
       }
+    } else if (o.type === 'ramp') {
+      const F = this.boxFaces({ x0: o.x - 0.9, x1: o.x + 0.9, y0: 0, y1: 0.5, z0: o.z, z1: o.z + 2.2 });
+      if (!F) return;
+      if (F.side) this.fillQuad(F.side, '#6f7883');
+      if (F.top) this.fillQuad(F.top, '#9aa1aa');
+      if (F.front) this.fillQuad(F.front, '#8a919b');
+    } else if (o.type === 'tunnel') {
+      for (const sgn of [-1, 1]) {
+        const F = this.boxFaces({ x0: o.x + sgn * 1.3 - 0.17, x1: o.x + sgn * 1.3 + 0.17, y0: 0, y1: 2.6, z0: o.z, z1: o.z + 0.9 });
+        if (F) { if (F.side) this.fillQuad(F.side, '#5b616a'); if (F.front) this.fillQuad(F.front, '#6b717a'); }
+      }
+      const T = this.boxFaces({ x0: o.x - 1.5, x1: o.x + 1.5, y0: 2.4, y1: 2.9, z0: o.z, z1: o.z + 0.9 });
+      if (T) { if (T.front) this.fillQuad(T.front, '#7a818b'); if (T.top) this.fillQuad(T.top, '#8d939c'); }
+    } else if (o.type === 'turnstile') {
+      for (const sgn of [-1, 0, 1]) {
+        const F = this.boxFaces({ x0: o.x + sgn * 0.42 - 0.08, x1: o.x + sgn * 0.42 + 0.08, y0: 0, y1: 2.2, z0: o.z, z1: o.z + 0.2 });
+        if (F) { if (F.side) this.fillQuad(F.side, '#767c86'); if (F.front) this.fillQuad(F.front, '#8d939c'); }
+      }
+      const T = this.boxFaces({ x0: o.x - 0.67, x1: o.x + 0.67, y0: 2.05, y1: 2.3, z0: o.z, z1: o.z + 0.2 });
+      if (T) { if (T.front) this.fillQuad(T.front, '#cc4a3c'); if (T.top) this.fillQuad(T.top, '#e2664a'); }
+    } else if (o.type === 'sweeper') {
+      const P = this.boxFaces({ x0: o.x - 0.11, x1: o.x + 0.11, y0: 0, y1: 0.95, z0: o.z, z1: o.z + 0.16 });
+      if (P) { if (P.side) this.fillQuad(P.side, '#767c86'); if (P.front) this.fillQuad(P.front, '#8d939c'); }
+      const F = this.boxFaces({ x0: o.x - 1.1, x1: o.x + 1.1, y0: 0.92, y1: 1.08, z0: o.z, z1: o.z + 0.16 });
+      if (F) { if (F.front) this.fillQuad(F.front, '#cc4a3c'); if (F.top) this.fillQuad(F.top, '#e2664a'); }
+    } else {
+      /* 兜底：没写专属画法的障碍也按尺寸画个方块，避免出现"看不见的障碍" */
+      const hw = o.hw || 0.9;
+      const F = this.boxFaces({ x0: o.x - hw, x1: o.x + hw, y0: o.y0 || 0, y1: o.y1 || 1.0, z0: o.z, z1: o.z + (o.len || 0.5) });
+      if (!F) return;
+      if (F.side) this.fillQuad(F.side, '#b06a4a');
+      if (F.top) this.fillQuad(F.top, '#cc8a5f');
+      if (F.front) this.fillQuad(F.front, '#c47a55');
     }
   },
 

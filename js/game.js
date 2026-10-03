@@ -8,7 +8,7 @@ const Game = {
   time: 0, elapsed: 0, travel: 0, speed: 0,
   score: 0, runCoins: 0, mult: 1, maxMult: 1, coinStreak: 0, lastCoinAt: 0,
   objs: [], parts: [], rq: [], nextZ: 0, springs: 0,
-  invuln: 0, dying: 0, hurtFlash: 0, shake: 0,
+  invuln: 0, dying: 0, hurtFlash: 0, shake: 0, hitStop: 0, bounce: 0,
   nearMissCd: 0, coinSndCd: 0,
   themeFrom: THEMES.day, themeTo: THEMES.day, themeT: 1, theme: THEMES.day, themeTimer: 0,
   runStats: null, ranRevive: 0, reviveUsed: 0, pausedFrom: 'run',
@@ -68,9 +68,10 @@ const Game = {
     this.score = 0; this.runCoins = 0; this.mult = 1; this.maxMult = 1;
     this.coinStreak = 0; this.objs = []; this.parts = []; this.nextZ = 46;
     this.invuln = 0; this.dying = 0; this.hurtFlash = 0; this.shake = 0;
+    this.hitStop = 0; this.bounce = 0;
     this.nearMissCd = 0; this.coinSndCd = 0;
     this.reviveUsed = 0; this.springs = 0;
-    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0 };
+    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0, dash: 0, slow: 0 };
     this.player = {
       x: 0, y: 0, vy: 0, lane: 1, state: 'run', phase: 0,
       rollT: 0, grounded: true, supportY: 0, squash: 0, lean: 0, boardT: 0,
@@ -127,10 +128,10 @@ const Game = {
     if (f.samples.length < 45 || this.state !== 'run') return;
     const avg = f.samples.reduce((a, b) => a + b, 0) / f.samples.length;
     f.avg = 1 / Math.max(0.0001, avg);
-    if (f.avg < 48) {
+    if (f.avg < 52) {
       f.lowFrames++;
-      if (f.lowFrames > 90 && f.dprStep === 0) { f.dprStep = 1; Renderer.dprScale = 0.82; Renderer.resize(); f.lowFrames = 0; }
-      else if (f.lowFrames > 190 && f.dprStep === 1) { f.dprStep = 2; Renderer.dprScale = 0.66; Renderer.fxLow = true; Renderer.resize(); f.lowFrames = 0; }
+      if (f.lowFrames > 50 && f.dprStep === 0) { f.dprStep = 1; Renderer.dprScale = 0.84; Renderer.resize(); f.lowFrames = 0; }
+      else if (f.lowFrames > 120 && f.dprStep === 1) { f.dprStep = 2; Renderer.dprScale = 0.68; Renderer.fxLow = true; Renderer.resize(); f.lowFrames = 0; }
     } else { f.lowFrames = Math.max(0, f.lowFrames - 1); }
   },
 
@@ -143,17 +144,32 @@ const Game = {
   /* ================= 更新 ================= */
   update(dt) {
     if (this.devFreeze) return;             // 调试截图用：冻结世界只保留渲染
+    /* 撞击定格（hit stop）：撞上的头 0.1 秒，时间、粒子、镜头全部停住。
+       没有这一下，撞击就是"滑过去"，而不是"撞上去"。 */
+    if (this.hitStop > 0) { this.hitStop -= dt; return; }
     this.elapsed += dt;
     const p = this.player;
     /* 碰撞要做扫掠检测，得知道这一帧从哪儿跑到哪儿。
        放在所有 travel 自增之前取，见 collide() 开头的说明。 */
     this._prevTravel = this.travel;
 
-    /* ---- 死亡演出 ---- */
+    /* ---- 死亡演出：撞上去当场刹住 ----
+       地铁跑酷里撞到车厢是"啪"一下定住，人被撞飞、画面立刻停，
+       不会还带着速度往前滑十几米。所以速度直接归零、travel 只往后弹一点点，
+       剩下的时间留给追兵扑上来和角色摔倒。 */
     if (this.dying > 0) {
       this.dying -= dt;
-      this.speed = Math.max(0, this.speed - dt * 34);
-      this.travel += this.speed * dt;
+      this.speed = 0;
+      this.hurtFlash = Math.max(0, this.hurtFlash - dt * 1.3);
+      if (this.bounce > 0) {                 // 被撞得往后弹（纯视觉，不足半米）
+        const b = Math.min(this.bounce, dt * 2.4);
+        this.travel -= b; this.bounce -= b;
+      }
+      if (!p.grounded) {                     // 撞飞 → 落地 → 摔成 crash 姿势
+        p.vy -= 26 * dt;
+        p.y += p.vy * dt;
+        if (p.y <= 0) { p.y = 0; p.vy = 0; p.grounded = true; this.spawnDust(8); }
+      }
       this.chaser.dist = Utils.lerp(this.chaser.dist, 1.5, 1 - Math.pow(0.001, dt));
       this.chaser.on = true; this.chaser.mode = 'catch';
       this.updateParticles(dt);
@@ -172,6 +188,8 @@ const Game = {
     const jetOn = this.powers.jet > 0;
     let target = Math.min(D.speedMax, D.speedStart + this.elapsed * D.accel + this.travel * 0.0011);
     if (jetOn) target = Math.max(target, CFG.SPEED_JET);
+    if (this.powers.dash > 0) target *= 1.32;      // 无敌冲刺：跑得更快
+    if (this.powers.slow > 0) target *= 0.60;      // 时间减速：世界变慢，好躲
     this.speed = jetOn ? Utils.lerp(this.speed, target, 1 - Math.pow(0.05, dt))
       : Utils.lerp(this.speed, target, 1 - Math.pow(0.35, dt));
     this.travel += this.speed * dt;
@@ -295,6 +313,12 @@ const Game = {
     for (let i = 0; i < this.objs.length; i++) {
       const o = this.objs[i];
       if (o.vz) o.worldZ -= o.vz * dt;
+      /* 横扫杆：在两条车道之间来回摆动，撞到边界反向 */
+      if (o.vx) {
+        o.x += o.vx * dt;
+        if (o.x < o.xMin) { o.x = o.xMin; o.vx = -o.vx; }
+        else if (o.x > o.xMax) { o.x = o.xMax; o.vx = -o.vx; }
+      }
       if (o.kind === 'coin') { o.spin += dt * 4.2; if (o.magnetized) this.magnetMove(o, dt); }
       if (o.kind === 'power') o.t += dt;
       this.collide(o);
@@ -437,7 +461,7 @@ const Game = {
   },
 
   powerDur(kind) {
-    const table = { magnet: 1.6, jet: 0.9, shoe: 1.2, board: 3 };
+    const table = { magnet: 1.6, jet: 0.9, shoe: 1.2, board: 3, dash: 0.8, slow: 0.7 };
     let t = CFG.POWER_TIME[kind] + (Store.data.skills[kind] || 0) * (table[kind] || 0);
     const ch = this.charDef();
     if (ch && ch.p[kind]) t *= (1 + ch.p[kind]);
@@ -447,7 +471,11 @@ const Game = {
     const idx = POWERS.findIndex(x => x.id === kind);
     const info = POWERS[idx] || POWERS[0];
     if (kind === 'board') { this.startBoard(); }
-    else { this.powers[kind] = Math.max(this.powers[kind], this.powerDur(kind)); }
+    else {
+      this.powers[kind] = Math.max(this.powers[kind], this.powerDur(kind));
+      /* 无敌冲刺：期间撞上障碍直接撞碎（复用 invuln 的撞碎逻辑） */
+      if (kind === 'dash') this.invuln = Math.max(this.invuln, this.powers.dash);
+    }
     Store.data.powerUses++;
     if (this.runStats) this.runStats.powers = (this.runStats.powers || 0) + 1;
     Missions.progress(kind === 'board' ? 'board' : kind, 1);
@@ -460,6 +488,8 @@ const Game = {
   },
   onPowerEnd(kind) {
     if (kind === 'jet') UI.toast('喷射结束');
+    else if (kind === 'dash') UI.toast('冲刺结束');
+    else if (kind === 'slow') UI.toast('时间恢复正常');
   },
 
   /* ================= 磁铁 ================= */
@@ -522,6 +552,12 @@ const Game = {
       return;
     }
     if (this.dying > 0) return;
+
+    /* ---- 纯装饰（信号灯 / 水洼 / 龙门架）：不挡路，只用来点亮图鉴 ---- */
+    if (o.decor) {
+      if (!o.seen) { o.seen = true; this.markCodex(o); }
+      return;
+    }
 
     /* ---- 障碍 / 车厢 ---- */
     const len = o.len || 0.6;
@@ -597,20 +633,32 @@ const Game = {
     this.runCoins += gain;
     this.runStats.coins += gain;
     this.score += CFG.COIN_SCORE * this.mult * (this.powers.x2 > 0 ? 2 : 1);
-    this.coinStreak++;
     const now = this.time;
-    if (now - this.lastCoinAt < 0.8) { /* streak continues */ } else this.coinStreak = Math.max(1, this.coinStreak);
+    if (now - this.lastCoinAt > 0.8) this.coinStreak = 0;   // 超过 0.8 秒没吃到金币，连击中断
+    this.coinStreak++;
     this.lastCoinAt = now;
+    if (this.coinStreak > 0 && this.coinStreak % 10 === 0) UI.combo('连吃 ' + this.coinStreak + ' 枚！');
     if (this.coinSndCd <= 0) { Sound.coin(this.coinStreak); this.coinSndCd = 0.045; }
     Missions.progress('coins', gain);
     Missions.progress('coinRun', gain);
+    /* 图鉴：金币路线 / 车顶金币 靠收集行为点亮 */
+    this.markCodex({ otype: this.player.y > 0.35 ? 'roof_coins' : 'coin_line' });
     if (Renderer.fxLow !== true || this.parts.length < 60) this.spawnBurst(o.x, o.y, 4, '#ffe9a8', 0.28);
   },
 
   /* 障碍图鉴：记录见过的障碍 */
   markCodex(o) {
     try {
-      const id = CODEX_MAP[o.type] || (o.kind === 'train' ? 'train_high' : null);
+      /* 注意：障碍的字段是 otype（旧代码误写成 o.type，导致图鉴几乎点不亮） */
+      let id;
+      if (o.kind === 'train') {
+        if (o.oncoming) id = 'oncoming';
+        else if (o.h <= 1.6) id = 'train_low';
+        else if (o.h <= 2.6) id = 'train_mid';
+        else id = 'train_high';
+      } else {
+        id = CODEX_MAP[o.otype || o.type] || null;
+      }
       if (!id) return;
       if (Store.data.codexSeen.indexOf(id) < 0) {
         Store.data.codexSeen.push(id);
@@ -633,12 +681,20 @@ const Game = {
       return;
     }
     this.markCodex(o);
-    /* 高仿失败机制：第一次撞击引来追兵，7 秒内再次撞击就被抓住 */
+    /* 悬浮板：替你挨这一下。
+       菜单提示里写过"悬浮板能替你挡一次撞击"，但 breakBoard(true) 这条保命路径
+       之前从来没被调用过——板子只是会自然到期，撞了照样死。这里补上。 */
+    if (p.boardT > 0) { this.breakBoard(false); return; }
+    /* 高仿失败机制：第一次撞击引来追兵，7 秒内再次撞击就被抓住。
+       但**撞车厢没有第二次机会**——地铁跑酷里正面撞火车就是当场结束，
+       所以这里把 train 单独拎出来当致命伤。 */
     const cs = this.chase || (this.chase = { hits: 0, grace: 0, active: false });
-    if (cs.hits === 0) {
+    if (o.kind !== 'train' && cs.hits === 0) {
       cs.hits = 1; cs.grace = 7; cs.active = true;
       this.chaser.on = true; this.chaser.mode = 'chase'; this.chaser.dist = 3.4;
       this.invuln = Math.max(this.invuln, 1.5);
+      this.speed *= 0.45;                    // 踉跄一下：撞了要掉速，不然完全没有撞感
+      this.hitStop = 0.07;
       this.hurtFlash = 0.8; this.shake = 1.3;
       this.runStats.hits++;
       Sound.crash();
@@ -648,9 +704,14 @@ const Game = {
     }
     Sound.laugh();
     Sound.crash();
-    this.dying = 0.95;
+    /* 当场刹住：速度归零 + 0.1 秒定格 + 往后弹，然后才播摔倒 */
+    this.dying = 0.78;
+    this.hitStop = 0.10;
+    this.bounce = 0.42;
+    this.speed = 0;
     this.hurtFlash = 1;
     this.shake = 1.8;
+    p.vy = 3.6; p.grounded = false;          // 被撞得弹起来一下（滞空 ≈ 0.28s，正好摔在 crash 姿势上）
     this.spawnBurst(p.x, p.y + 0.9, 26, '#ff5d55', 0.8);
     UI.toast(Utils.pick(QUOTES.crash));
     if (Store.data.settings.vibe && navigator.vibrate) navigator.vibrate([30, 40, 60]);
@@ -780,6 +841,15 @@ const Game = {
       highbar: { hw: 1.15, len: 0.30, y0: 1.35, y1: 2.55 },
       cone: { hw: 0.42, len: 0.5, y0: 0, y1: 0.66 },
       spring: { hw: 0.85, len: 1.1, y0: 0, y1: 0.42, spring: true },
+      /* ---- 新增障碍 ---- */
+      tunnel: { hw: 1.18, len: 3.0, y0: 1.30, y1: 2.60 },                       // 限高隧道：必须滑铲
+      turnstile: { hw: 0.72, len: 0.45, y0: 0, y1: 2.20 },                      // 闸机：跳不过也滑不过，只能变道
+      ramp: { hw: 0.90, len: 2.2, y0: 0, y1: 0.50, spring: true, ramp: true, launch: 12 },  // 斜坡：冲上去正好落到矮车厢顶
+      sweeper: { hw: 0.55, len: 0.5, y0: 0, y1: 1.00, sweep: true },            // 横扫杆：左右摆动，掐时机跳过
+      /* ---- 纯装饰：只出现不挡路（decor 标记在 collide 里直接放行） ---- */
+      signal: { hw: 0.30, len: 0.30, y0: 0, y1: 2.60, decor: true },
+      puddle: { hw: 0.90, len: 0.70, y0: 0, y1: 0.05, decor: true },
+      gantry: { hw: 1.60, len: 0.30, y0: 0, y1: 4.00, decor: true },
     }[type];
     Object.assign(base, D, extra || {});
     this.objs.push(base);
@@ -823,6 +893,7 @@ const Gen = {
       G.z += 12;
     } },
     { id: 'doubleBlock', w: () => 6 + Gen.diffGuess * 8, fn: (G) => {
+      Game.markCodex({ otype: 'barrier_double' });
       const free = Utils.irand(0, 2);
       for (let l = 0; l < 3; l++) {
         if (l === free) continue;
@@ -860,6 +931,7 @@ const Gen = {
       G.z += len + 10;
     } },
     { id: 'trainCorridor', w: () => 3 + Gen.diffGuess * 9, fn: (G) => {
+      Game.markCodex({ otype: 'gap_train' });
       const free = Utils.irand(0, 2);
       const len = Utils.irand(16, 26);
       for (let l = 0; l < 3; l++) if (l !== free) Game.addTrain(G.z, l, len, 3.3);
@@ -914,6 +986,54 @@ const Gen = {
       for (let i = 0; i < 6; i++) Game.addCoin(G.z + 2 + i * 2.3, G.laneX(a), 1.9);
       G.z += 28;
     } },
+    /* ---------- 新增段落 ---------- */
+    /* 隧道：限高，必须滑铲通过 */
+    { id: 'tunnel', w: () => 9, fn: (G) => {
+      const lane = Utils.irand(0, 2);
+      Game.addObstacle('tunnel', lane, { worldZ: G.z });
+      const other = (lane + 1) % 3;
+      for (let i = 0; i < 5; i++) Game.addCoin(G.z + 1 + i * 2.0, G.laneX(other), 0.85);
+      if (Math.random() < 0.45) Game.addObstacle('tunnel', other, { worldZ: G.z });
+      G.z += 16;
+    } },
+    /* 闸机：齐人高，跳不过也滑不过，只能变道 */
+    { id: 'turnstile', w: () => 7 + Gen.diffGuess * 8, fn: (G) => {
+      const free = Utils.irand(0, 2);
+      let n = 0;
+      for (let l = 0; l < 3; l++) {
+        if (l === free) continue;
+        if (n === 1 && Math.random() < 0.5) continue;   // 保证留出可通行车道
+        Game.addObstacle('turnstile', l, { worldZ: G.z + Utils.rand(-0.3, 0.3) });
+        n++;
+      }
+      for (let i = 0; i < 5; i++) Game.addCoin(G.z + i * 2.1, G.laneX(free), 0.85);
+      G.z += 15;
+    } },
+    /* 斜坡：冲上去正好落在矮车厢顶上 */
+    { id: 'rampRoof', w: () => 8, fn: (G) => {
+      const lane = Utils.irand(0, 2), len = Utils.irand(14, 22);
+      Game.addObstacle('ramp', lane, { worldZ: G.z });
+      Game.addTrain(G.z + 2.6, lane, len, 1.35);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 6 + i * 2.3, G.laneX(lane), 1.9);
+      G.z += len + 13;
+    } },
+    /* 横扫杆：在两条车道之间来回摆，掐时机跳过 */
+    { id: 'sweeper', w: () => 6 + Gen.diffGuess * 7, fn: (G) => {
+      const ls = [0, 1, 2].sort(() => Math.random() - 0.5);
+      const a = Math.min(ls[0], ls[1]), b = Math.max(ls[0], ls[1]);
+      const o = Game.addObstacle('sweeper', a, { worldZ: G.z });
+      o.xMin = G.laneX(a) - 0.35; o.xMax = G.laneX(b) + 0.35;
+      o.x = o.xMin; o.vx = 2.4 + 1.8 * Gen.diffGuess;
+      const free = [0, 1, 2].filter((l) => l !== a && l !== b)[0];
+      for (let i = 0; i < 5; i++) Game.addCoin(G.z + i * 2.1, G.laneX(free), 0.85);
+      G.z += 14;
+    } },
+    /* 纯装饰：信号灯 / 水洼 / 龙门架，路过即可点亮图鉴，不阻挡 */
+    { id: 'decor', w: () => 5, fn: (G) => {
+      const k = Utils.pick(['signal', 'puddle', 'gantry']);
+      Game.addObstacle(k, Utils.irand(0, 2), { worldZ: G.z, decor: true });
+      G.z += 18;
+    } },
   ],
 
   get diffGuess() { return this.diff; },
@@ -957,6 +1077,8 @@ Object.assign(Game, {
       // 地面阴影
       const supportY = p.y;
       Renderer.drawShadow(p.x, CFG.CAM_BACK, 1, supportY > 0.25 ? 0.22 : 0.34);
+      /* 接地影：再叠一层更小更实的影，角色才像真的踩在地上（之前只有一层大软影） */
+      Renderer.drawShadow(p.x, CFG.CAM_BACK, 0.52, supportY > 0.25 ? 0.10 : 0.26);
       for (const o of this.objs) {
         if (o.taken || o.kind !== 'train') continue;
         const zr = rz(o.worldZ + o.len * 0.5);
@@ -1004,7 +1126,7 @@ Object.assign(Game, {
         if (o.kind === 'train') {
           Renderer.drawTrain({ x0: o.x - o.hw, x1: o.x + o.hw, y0: 0, y1: o.h, z0: zr, z1: zr + o.len, color: o.color, headlight: o.headlight, h: o.h });
         } else if (o.kind === 'obstacle') {
-          Renderer.drawObstacle({ type: o.otype, x: o.x, z: zr });
+          Renderer.drawObstacle({ type: o.otype, x: o.x, z: zr, hw: o.hw, len: o.len, y0: o.y0, y1: o.y1, ramp: o.ramp });
         } else if (o.kind === 'coin') {
           Renderer.drawCoin({ x: o.x, y: o.y, z: zr, spin: o.spin, scale: 1 });
         } else if (o.kind === 'power') {

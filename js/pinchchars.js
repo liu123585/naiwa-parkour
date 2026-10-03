@@ -344,8 +344,85 @@ function buildBody(cd, seed) {
   /* 棉花：边上再蓬两撮 */
   if (cd.mat === 'cotton') {
     const c = toyMat('#ffffff', 'cotton');
-    g.add(mesh(geoSphere('cf', 0.10, 0.09, 0.10, 0.08, 31), c, -0.26, P.bodyY - 0.06, 0.10));
-    g.add(mesh(geoSphere('cf', 0.09, 0.08, 0.09, 0.08, 32), c, 0.24, P.bodyY + 0.14, -0.12));
+    g.add(mesh(geoSphere('cf1', 0.10, 0.09, 0.10, 0.08, 31), c, -0.26, P.bodyY - 0.06, 0.10));
+    g.add(mesh(geoSphere('cf2', 0.09, 0.08, 0.09, 0.08, 32), c, 0.24, P.bodyY + 0.14, -0.12));
+  }
+
+  /* ---- 材质专属表面细节 ----
+     13 只只有颜色不同会显得"同一只换色"，这里给每种材料刻上自己的特征：
+     纸皮有瓦楞纹、铁蛋有铆钉、毛毡有针脚、木木有年轮、积木有凸点、
+     铜扣有四孔、橡皮有斜切面、弹簧有金属环、泡泡有高光、泥泥有指纹压痕。 */
+  const ink = shade(cd.body, 0.52);
+  const lite = shade(cd.body, 1.20);
+  const zzAt = (y) => (s === 'box' ? rz * 0.99 : surfZ(y, ry, rz));
+  const face2 = (key, w, h, y, col, dx) => {          // 正反两面同位置各贴一片
+    g.add(mesh(geoBox(key + 'f', w, h, 0.022, 0, 0), toyMat(col, cd.mat), dx || 0, y, zzAt(y) + 0.008));
+    g.add(mesh(geoBox(key + 'b', w, h, 0.022, 0, 0), toyMat(col, cd.mat), dx || 0, y, -zzAt(y) - 0.008));
+  };
+  const dot = (key, x, y, r, col, mat) => {
+    g.add(mesh(geoSphere(key, r, r * 0.78, 0.014, 0, 0), toyMat(col, mat || cd.mat), x, y, zzAt(y) + 0.011));
+  };
+
+  if (cd.mat === 'paper') {            // 纸皮：三道瓦楞纹 + 一条封箱胶带
+    face2('cr1', P.bodyRX * 1.60, 0.020, P.bodyY - 0.16, ink);
+    face2('cr2', P.bodyRX * 1.64, 0.020, P.bodyY + 0.02, ink);
+    face2('cr3', P.bodyRX * 1.48, 0.020, P.bodyY + 0.20, ink);
+    g.add(mesh(geoBox('tp1', 0.34, 0.018, 0.05, 0, 0), toyMat('#e9dcb4', 'paper'), -0.12, P.bodyY + 0.30, zzAt(P.bodyY + 0.30) + 0.012));
+  } else if (cd.mat === 'tin') {       // 铁蛋：两条竖缝 + 四颗铆钉
+    for (const s2 of [-1, 1]) {
+      g.add(mesh(geoBox('seam' + (s2 > 0 ? 'r' : 'l'), 0.018, P.bodyRY * 1.5, 0.02, 0, 0),
+        toyMat(ink, 'tin'), s2 * P.bodyRX * 0.60, P.bodyY, zzAt(P.bodyY) * 0.72));
+    }
+    dot('rv1', -0.16, P.bodyY + 0.14, 0.024, '#e6ebf2', 'tin');
+    dot('rv2', 0.16, P.bodyY + 0.14, 0.024, '#e6ebf2', 'tin');
+    dot('rv3', -0.16, P.bodyY - 0.06, 0.024, '#e6ebf2', 'tin');
+    dot('rv4', 0.16, P.bodyY - 0.06, 0.024, '#e6ebf2', 'tin');
+  } else if (cd.mat === 'felt') {      // 毡毡：五处针脚
+    for (let i = 0; i < 5; i++) {
+      const y = P.bodyY - 0.18 + i * 0.09;
+      g.add(mesh(geoBox('st' + i, 0.075, 0.016, 0.018, 0, 0), toyMat(ink, 'felt'),
+        (i % 2 ? 0.05 : -0.05), y, zzAt(y) + 0.010));
+    }
+  } else if (cd.mat === 'wood') {      // 木木：年轮 + 木节
+    for (let i = 0; i < 3; i++) {
+      g.add(mesh(geoTorus('yr' + i, 0.10 + i * 0.075, 0.012, Math.PI * 2), toyMat(ink, 'wood'),
+        0.04, P.bodyY - 0.02, zzAt(P.bodyY - 0.02) + 0.004));
+    }
+    dot('knot', 0.04, P.bodyY - 0.02, 0.035, shade(cd.body, 0.62), 'wood');
+  } else if (cd.mat === 'plastic') {    // 积木：六颗凸点
+    const pts = [[-0.13, 0.16], [0.05, 0.16], [-0.13, -0.02], [0.05, -0.02], [-0.13, -0.20], [0.05, -0.20]];
+    pts.forEach((p, i) => {
+      g.add(mesh(geoBox('st' + i, 0.062, 0.05, 0.03, 0, 0), toyMat(lite, 'plastic'), p[0], P.bodyY + p[1], zzAt(P.bodyY + p[1]) + 0.012));
+    });
+  } else if (cd.mat === 'brass') {     // 铜扣：亮边 + 四个扣孔
+    g.add(mesh(geoTorus('rim', P.bodyRX * 1.00, 0.018, Math.PI * 2), toyMat(lite, 'brass'), 0, P.bodyY, 0));
+    dot('hl1', -0.06, P.bodyY + 0.05, 0.028, '#2a2118');
+    dot('hl2', 0.06, P.bodyY + 0.05, 0.028, '#2a2118');
+    dot('hl3', -0.06, P.bodyY - 0.05, 0.028, '#2a2118');
+    dot('hl4', 0.06, P.bodyY - 0.05, 0.028, '#2a2118');
+  } else if (cd.mat === 'eraser') {    // 橡皮：两道斜切棱
+    for (const s2 of [-1, 1]) {
+      const f = mesh(geoBox('fac' + (s2 > 0 ? 'r' : 'l'), 0.02, P.bodyRY * 1.4, 0.03, 0, 0),
+        toyMat(lite, 'eraser'), s2 * P.bodyRX * 0.70, P.bodyY, zzAt(P.bodyY) * 0.66);
+      f.rotation.z = s2 * 0.22;
+      g.add(f);
+    }
+  } else if (cd.mat === 'metal') {     // 弹簧：两道金属环
+    for (let i = 0; i < 2; i++) {
+      const t = mesh(geoTorus('mr' + i, P.bodyRX * 0.98, 0.020, Math.PI * 2), toyMat(ink, 'metal'), 0, P.bodyY - 0.10 + i * 0.22, 0);
+      t.rotation.x = Math.PI / 2;
+      g.add(t);
+    }
+  } else if (cd.mat === 'clear') {     // 泡泡：三颗高光
+    dot('cl1', -0.12, P.bodyY + 0.16, 0.032, '#ffffff', 'clear');
+    dot('cl2', 0.10, P.bodyY + 0.06, 0.026, '#ffffff', 'clear');
+    dot('cl3', -0.04, P.bodyY - 0.14, 0.022, '#ffffff', 'clear');
+  } else if (cd.mat === 'clay') {      // 泥泥：拇指按出来的凹坑（贴背面，正脸留给五官）
+    const fpMat = toyMat(shade(cd.body, 0.84));
+    const back = (key, x, y, r) => g.add(mesh(geoSphere(key, r, r * 0.72, 0.014, 0, 0), fpMat, x, y, -zzAt(y) - 0.008));
+    back('fp1', -0.07, P.bodyY + 0.06, 0.048);
+    back('fp2', 0.09, P.bodyY - 0.10, 0.042);
+    back('fp3', -0.03, P.bodyY - 0.24, 0.040);
   }
   void frontZ;
   return g;
@@ -385,10 +462,30 @@ function buildRig(skin, opts) {
       s * P.eyeX - 0.022, eyeY + off + 0.026, P.eyeZ + P.eyeR * 0.62));
   }
 
-  /* ---- 嘴：一段弧 ---- */
-  const mouth = mesh(geoTorus('mo', 0.055, 0.013, Math.PI * 0.9), pupil, 0, P.mouthY, P.mouthZ);
-  mouth.rotation.z = Math.PI;
-  core.add(mouth);
+  /* ---- 眉毛：一高一低，脸立刻就"有性格"了 ---- */
+  const browMat = toyMat(shade(cd.body, 0.40), cd.mat);
+  for (const s of [-1, 1]) {
+    const br = mesh(geoBox('bro' + (s > 0 ? 'r' : 'l'), 0.082, 0.019, 0.022, 0, 0), browMat,
+      s * P.eyeX, eyeY + 0.088 + (s < 0 ? 0.014 : -0.008), P.eyeZ + 0.018);
+    br.rotation.z = s * (0.16 + (seed % 3) * 0.06);
+    core.add(br);
+  }
+
+  /* ---- 嘴：按 seed 分三种口型（笑弧 / 张嘴吐舌 / 抿嘴），别 13 只共用一张脸 ---- */
+  const mv = seed % 3;
+  if (mv === 0) {
+    /* 嘴要压得住肚皮贴片：肚皮就在嘴下面，嘴太小会被当成下巴 */
+    const mouth = mesh(geoTorus('mo0', 0.072, 0.017, Math.PI * 0.95), pupil, 0, P.mouthY - 0.006, P.mouthZ + 0.004);
+    mouth.rotation.z = Math.PI;
+    core.add(mouth);
+  } else if (mv === 1) {
+    core.add(mesh(geoSphere('mo1', 0.052, 0.040, 0.030, 0, 0), toyMat('#43211d', 'eraser'), 0, P.mouthY - 0.004, P.mouthZ + 0.004));
+    core.add(mesh(geoSphere('mo1t', 0.030, 0.018, 0.014, 0, 0), toyMat('#e8767f', 'eraser'), 0, P.mouthY - 0.020, P.mouthZ + 0.020));
+  } else {
+    const mouth = mesh(geoBox('mo2', 0.088, 0.016, 0.022, 0, 0), pupil, 0, P.mouthY + 0.004, P.mouthZ);
+    mouth.rotation.z = 0.10;
+    core.add(mouth);
+  }
 
   /* ---- 四肢：比身体暗一档，剪影才分得开 ---- */
   const limbMat = toyMat(shade(cd.body, 0.74), cd.mat);

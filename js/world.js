@@ -166,6 +166,8 @@ const CODEX = [
   { id: 'signal', name: '信号灯', kind: '环境', icon: 'signal', desc: '路边的信号灯，纯粹的氛围装饰。' },
   { id: 'puddle', name: '积水', kind: '环境', icon: 'puddle', desc: '雨后积水，踩过去会溅水花。' },
   { id: 'gantry', name: '龙门架', kind: '环境', icon: 'gantry', desc: '接触网支架，从下方穿过去。' },
+  { id: 'turnstile', name: '闸机', kind: '变道', icon: 'turnstile', desc: '齐人高的检票闸机，跳不过也钻不过，只能变道绕开。' },
+  { id: 'sweeper', name: '横扫杆', kind: '互动', icon: 'sweeper', desc: '在两条车道之间来回摆动的横杆，看准节奏跳过去。' },
 ];
 
 /* 障碍类型 → 图鉴条目 */
@@ -174,6 +176,9 @@ const CODEX_MAP = {
   spring: 'spring', ramp: 'ramp', tunnel: 'tunnel', signal: 'signal',
   puddle: 'puddle', gantry: 'gantry', train_low: 'train_low', train_mid: 'train_mid',
   train_high: 'train_high', oncoming: 'oncoming',
+  turnstile: 'turnstile', sweeper: 'sweeper',
+  coin_line: 'coin_line', roof_coins: 'roof_coins',
+  barrier_double: 'barrier_double', gap_train: 'gap_train',
 };
 
 /* ---------------- 挑战之路（12 关，逐级解锁） ---------------- */

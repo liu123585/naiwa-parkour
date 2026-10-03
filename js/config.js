@@ -35,7 +35,7 @@ const CFG = {
   LANE_SNAP: 12.5,        // 变道横向速度
   BOOST_BOARD_SAVE: 1.6,  // 悬浮板碎掉后的无敌时间
 
-  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30, shield: 11 },
+  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30, shield: 11, dash: 4.5, slow: 6 },
 
   COIN_VALUE: 1,
   SCORE_PER_M: 1.0,
@@ -182,9 +182,17 @@ function skillCost(s, lv) { return Math.round(s.base * Math.pow(1.85, lv)); }
 /* ---------------- 道具 ----------------
    kind: 生成器里出现的概率权重 */
 /* 道具与参考游戏保持一致：只有「红色磁铁」与「蓝色护盾」两种 */
+/* 道具掉落表：生成器用 Utils.pick(POWERS) 等概率抽取；
+   六种效果引擎里都已实现（见 game.js 的 this.powers），weight 字段留给后续做加权。 */
 const POWERS = [
-  { id: 'magnet', name: '金币磁铁', color: '#e6423c', weight: 50 },
-  { id: 'shield', name: '护盾', color: '#2f8bff', weight: 50 },
+  { id: 'jet',    name: '喷射背包', color: '#4f9dff', weight: 30 },
+  { id: 'magnet', name: '金币磁铁', color: '#e6423c', weight: 38 },
+  { id: 'x2',     name: '双倍金币', color: '#f5b21a', weight: 36 },
+  { id: 'shoe',   name: '超级跑鞋', color: '#7cd44a', weight: 34 },
+  { id: 'board',  name: '悬浮板',   color: '#ff5fa2', weight: 22 },
+  { id: 'shield', name: '护盾',     color: '#2ee6d6', weight: 34 },
+  { id: 'dash',   name: '无敌冲刺', color: '#ff3d6e', weight: 26 },
+  { id: 'slow',   name: '时间减速', color: '#9b7bff', weight: 24 },
 ];
 
 /* ---------------- 任务池 ---------------- */

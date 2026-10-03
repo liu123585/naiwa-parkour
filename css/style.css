@@ -75,6 +75,16 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .ico-shoe{width:19px;height:11px;border-radius:6px 10px 4px 4px;background:linear-gradient(180deg,#ff9d4d,#e2650f)}
 .ico-x2{width:17px;height:17px;border-radius:5px;background:linear-gradient(135deg,#ffe27a,#f0a90a);color:#7a4b00;font-size:11px;font-weight:900;line-height:17px;text-align:center}
 .ico-x2::after{content:"x2"}
+/* 护盾：HUD 道具条用（之前缺这个图标，拾取护盾后条上是空白） */
+.ico-shield{width:14px;height:15px;background:linear-gradient(180deg,#9df3e8,#20c9bb);
+  clip-path:polygon(50% 0%,100% 22%,100% 56%,50% 100%,0% 56%,0% 22%)}
+/* 无敌冲刺：闪电 */
+.ico-dash{width:13px;height:17px;background:linear-gradient(180deg,#ffb3c4,#ff2d5e);
+  clip-path:polygon(58% 0%,18% 56%,46% 56%,36% 100%,84% 42%,54% 42%)}
+/* 时间减速：时钟 */
+.ico-slow{width:15px;height:15px;border-radius:50%;background:none;box-shadow:inset 0 0 0 2.5px #b9a6ff}
+.ico-slow::before{content:"";position:absolute;left:6px;top:3px;width:2.5px;height:5px;background:#b9a6ff;border-radius:2px}
+.ico-slow::after{content:"";position:absolute;left:6px;top:6px;width:4.5px;height:2.5px;background:#b9a6ff;border-radius:2px}
 .ico-star{width:0;height:0}
 .ico-heart{width:15px;height:14px;background:var(--red);border-radius:3px;transform:rotate(-45deg);margin-top:3px}
 .ico-heart::after{content:"";position:absolute;left:0;top:0;width:15px;height:14px;background:var(--red);border-radius:3px;transform:rotate(90deg)}
@@ -122,6 +132,9 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .power-item.p-x2 .bar i{background:#ffd34d}
 .power-item.p-shoe .bar i{background:#ff9d4d}
 .power-item.p-board .bar i{background:#ff6bd0}
+.power-item.p-shield .bar i{background:#2ee6d6}
+.power-item.p-dash .bar i{background:#ff3d6e}
+.power-item.p-slow .bar i{background:#9b7bff}
 
 .combo-tag{position:absolute;right:14px;top:calc(64px + env(safe-area-inset-top,0px));color:#fff;font-weight:900;font-size:22px;text-shadow:0 3px 0 rgba(0,0,0,.35);opacity:0;transition:opacity .2s;pointer-events:none;text-align:right}
 .combo-tag.show{opacity:1;animation:pop .3s ease}
@@ -407,6 +420,7 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .join-copy{margin-left:auto;padding:8px 13px;border-radius:11px;border:none;background:#ffd34d;color:#5a3d00;font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 0 #d9a300}
 .panel-unit{font-size:12px;color:#8a9099;font-weight:800}
 .chip-speed{background:linear-gradient(180deg,#3f4f6b,#27334a);color:#eaf3ff}
+.chip-mult{background:linear-gradient(180deg,#ffd76b,#e08a1c);color:#4a2a00}
 .chip-timer{background:linear-gradient(180deg,#ffc45c,#e07f14);color:#3a2200}
 .chip-shield{background:linear-gradient(180deg,#6adeff,#1d84cc);color:#04263a}
 .mode-pick .diff-btn{background:rgba(255,255,255,.07)}

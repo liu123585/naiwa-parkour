@@ -117,6 +117,8 @@ const Sound = {
     }
   },
   ui() { this.tone({ freq: 660, freq2: 880, type: 'triangle', dur: 0.08, vol: 0.22 }); },
+  /* 兼容旧调用名：panels.js 等处在用 Sound.click()，缺失会导致点击处理器抛错、面板打不开 */
+  click() { this.ui(); },
   deny() { this.tone({ freq: 220, freq2: 150, type: 'square', dur: 0.16, vol: 0.2 }); },
   buy() {
     [523, 659, 784, 1046].forEach((f, i) => this.tone({ freq: f, type: 'triangle', dur: 0.2, vol: 0.3, delay: i * 0.07 }));

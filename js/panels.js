@@ -276,6 +276,17 @@ const Panels = {
       case 'gantry':
         box(10, 30, 8, 50, '#8d949c'); box(82, 30, 8, 50, '#8d949c'); box(10, 30, 80, 9, '#8d949c', 2);
         break;
+      case 'turnstile':
+        box(46, 18, 8, 60, '#8d939c');
+        box(28, 18, 44, 10, '#cc4a3c', 3);
+        box(34, 42, 32, 7, '#f2ece0', 2);
+        box(20, 70, 60, 8, '#7a818b', 3);
+        break;
+      case 'sweeper':
+        box(46, 42, 8, 38, '#8d939c');
+        box(10, 34, 80, 11, '#cc4a3c', 3);
+        box(38, 74, 24, 8, '#7a818b', 3);
+        break;
       default:
         box(20, 30, 60, 40, '#c9ccd2', 6);
     }
@@ -640,8 +651,6 @@ const Panels = {
     box.innerHTML = '';
     const items = [
       { t: '联系邮箱', v: '3507423452@qq.com', b: '复制' },
-      { t: '抖音号', v: '70440770676', b: '复制' },
-      { t: '本地运行', v: 'node tools/serve.js 然后访问 localhost:8123', b: '复制' },
     ];
     items.forEach(it => {
       const card = document.createElement('div');
