@@ -222,6 +222,12 @@
             <button data-ms="synth">八音盒</button><button data-ms="file">原声</button>
           </div>
         </div>
+        <div class="setting-row" id="rowBgmTrack"><span>八音盒曲目</span>
+          <div class="bgm-pick">
+            <span class="bgm-now" id="bgmNow">玩具厂夜班</span>
+            <button class="btn btn-ghost btn-mini" id="btnBgmNext">换一首</button>
+          </div>
+        </div>
         <div class="setting-row"><span>震动反馈</span><button class="switch on" id="setVibe"></button></div>
         <div class="setting-row"><span>画质</span>
           <div class="seg" id="setQuality">
@@ -230,9 +236,12 @@
         </div>
         <div class="setting-row"><span>操作提示</span><button class="switch on" id="setTips"></button></div>
         <div class="panel-sep"></div>
+        <button class="btn btn-primary btn-block" id="btnUnlockAll">一键解锁全部内容（破解模式）</button>
         <button class="btn btn-danger btn-block" id="btnWipe">清空存档（金币/角色/记录）</button>
         <div class="about-text">
           <b>捏捏跑酷</b> v2.0 · 纯前端 HTML5 游戏。角色与场景全部由代码程序化生成，没有一张外部贴图、没有一个外部模型；音效与「八音盒」BGM 由 Web Audio 实时合成。<br>
+          八音盒曲库共 5 首（玩具厂夜班 / 发条进行曲 / 纸箱圆舞曲 / 检修通道 / 冲刺时刻），
+          每首完整播两遍自动换下一首，全部连播约 5 分钟才回到开头。<br>
           BGM 音源可选「原声」：<i>Retro Sports (Stage 3)</i> — Juhani Junkala / SubspaceAudio，
           CC0 1.0 公有领域（opengameart.org/content/12-music-loops）。<br>
           世界观：玩具厂倒闭那晚，车间里没做完的小家伙全跑了。它们抢下最后一条出厂传送带，后面追着来封箱的打包机。<br>

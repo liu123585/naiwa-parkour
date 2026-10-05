@@ -414,12 +414,16 @@ const UI = {
         const owned = save.chars.indexOf(ch.id) >= 0;
         const active = save.char === ch.id;
         const can = save.coins >= ch.price;
-        return '<div class="char-card' + (owned ? ' owned' : ' locked') + (active ? ' active' : '') + (!owned && !can ? ' cant' : '') + '" data-id="' + ch.id + '">' +
+        /* 正在等第二次点击的那张卡要显眼一点，否则玩家不知道"再点一次"是点哪 */
+        const asking = this._buyAsk === ch.id;
+        return '<div class="char-card' + (owned ? ' owned' : ' locked') + (active ? ' active' : '') + (!owned && !can ? ' cant' : '') + (asking ? ' confirming' : '') + '" data-id="' + ch.id + '">' +
           '<canvas data-skin="' + ch.skin + '"></canvas>' +
           '<div class="cname">' + ch.name + '<span style="font-size:10px;color:#9aa0aa;font-weight:700"> · ' + ch.tag + '</span></div>' +
           '<div class="cdesc">' + ch.desc + '</div>' +
           '<div class="cperk">' + ch.perk + '</div>' +
-          '<div class="cprice">' + (owned ? (active ? '使用中' : '点击使用') : '<i class="ico ico-coin"></i>' + Utils.fmt(ch.price)) + '</div>' +
+          '<div class="cprice">' + (owned
+            ? (active ? '使用中' : '点击使用')
+            : (asking ? '再点一次确认' : '<i class="ico ico-coin"></i>' + Utils.fmt(ch.price))) + '</div>' +
           '</div>';
       }).join('') + '</div>';
     } else {
@@ -464,15 +468,42 @@ const UI = {
   },
   stopCardAnim() { if (this._cardTick) { clearTimeout(this._cardTick); this._cardTick = null; } },
 
+  /* 购买 / 选择角色。
+     ⚠️ 这里原来用浏览器原生 confirm() 做二次确认，这是个坑：
+     confirm 在 iframe、微信内置浏览器、部分 PWA 环境里会被**静默拦截**，
+     不弹窗、直接返回 false。玩家点一下卡片，什么反馈都没有，
+     反馈过来就是"皮肤商城买不了"。
+     现在改成页面内的二次点击确认：第一次点把卡片文字变成「再点一次确认」，
+     4 秒内再点一下才真扣钱。既绕开了原生弹窗的限制，又保住了防误触。 */
   buyChar(id) {
     const ch = CHAR_MAP[id]; if (!ch) return;
     const save = Store.data;
-    if (save.chars.indexOf(id) >= 0) { save.char = id; Store.save(); Sound.ui(); this.buildChars(); this.refreshCoins(); UI.toast('已选择 ' + ch.name); return; }
-    if (save.coins < ch.price) { Sound.deny(); UI.toast('金币不足，还差 ' + (ch.price - save.coins)); return; }
-    // 未解锁：先弹购买确认，确认后再扣金币（无 confirm 环境——如自动化测试——直接放行）
-    if (typeof confirm === 'function' && confirm('花 ' + ch.price + ' 金币解锁皮肤「' + ch.name + '」？') === false) {
-      Sound.ui(); return;
+    if (save.chars.indexOf(id) >= 0) {
+      save.char = id; Store.save(); Sound.ui();
+      this._buyAsk = null;
+      this.buildChars(); this.refreshCoins();
+      UI.toast('已选择 ' + ch.name);
+      return;
     }
+    if (save.coins < ch.price) { Sound.deny(); UI.toast('金币不足，还差 ' + (ch.price - save.coins)); return; }
+
+    if (this._buyAsk !== id) {
+      this._buyAsk = id;
+      Sound.ui();
+      UI.toast('再点一次确认解锁「' + ch.name + '」（' + ch.price + ' 金币）');
+      this.buildChars();
+      if (this._buyTimer) clearTimeout(this._buyTimer);
+      this._buyTimer = setTimeout(() => {
+        if (this._buyAsk === id) {
+          this._buyAsk = null;
+          if (this.el.chars && !this.el.chars.classList.contains('hidden')) this.buildChars();
+        }
+      }, 4000);
+      return;
+    }
+
+    this._buyAsk = null;
+    if (this._buyTimer) clearTimeout(this._buyTimer);
     save.coins -= ch.price;
     save.chars.push(id);
     save.char = id;
@@ -651,15 +682,58 @@ const UI = {
         Sound.ui();
       };
     });
-    q('btnWipe').onclick = () => {
-      if (confirm('确定要清空所有存档吗？（金币、角色、记录都会消失）')) {
+    /* 一键解锁全部（破解模式）。
+       跟商城同一个理由走"点两次"确认：不用原生 confirm，
+       免得在 iframe / 微信内置浏览器里被静默拦掉、点了没反应。 */
+    const ua = q('btnUnlockAll');
+    const uaLabel = '一键解锁全部内容（破解模式）';
+    if (ua) ua.onclick = () => {
+      if (this._unlockAsk) {
+        this._unlockAsk = false;
+        ua.textContent = uaLabel;
+        Store.unlockEverything();
+        this.refreshCoins();
+        this.buildChars(); this.buildMissions(); this.buildSettings();
+        Sound.buy();
+        UI.toast('已解锁全部：角色 / 服装 / 地图 / 技能 / 图鉴 / 成就，金币 999999');
+        return;
+      }
+      this._unlockAsk = true;
+      ua.textContent = '再点一次确认解锁';
+      Sound.ui();
+      if (this._unlockTimer) clearTimeout(this._unlockTimer);
+      this._unlockTimer = setTimeout(() => {
+        if (this._unlockAsk) { this._unlockAsk = false; ua.textContent = uaLabel; }
+      }, 4000);
+    };
+
+    /* 清空存档。
+       这里以前用的是原生 confirm()——和商城那个 bug 是同一个坑：
+       iframe / 微信内置浏览器会把 confirm 静默拦掉，返回 false，
+       于是按钮点了完全没反应。改成页面内"点两次"确认。 */
+    const wb = q('btnWipe');
+    const wbLabel = '清空存档（金币/角色/记录）';
+    if (wb) wb.onclick = () => {
+      if (this._wipeAsk) {
+        this._wipeAsk = false;
+        wb.textContent = wbLabel;
+        wb.classList.remove('confirming');
         Store.wipe();
         Store.save();
         this.refreshCoins();
         this.buildChars(); this.buildMissions(); this.buildSettings();
         this.showMenu();
         this.toast('存档已清空');
+        return;
       }
+      this._wipeAsk = true;
+      wb.textContent = '再点一次确认清空';
+      wb.classList.add('confirming');
+      Sound.ui();
+      if (this._wipeTimer) clearTimeout(this._wipeTimer);
+      this._wipeTimer = setTimeout(() => {
+        if (this._wipeAsk) { this._wipeAsk = false; wb.textContent = wbLabel; wb.classList.remove('confirming'); }
+      }, 4000);
     };
     document.querySelectorAll('#setMusicSrc button').forEach(b => {
       b.onclick = () => {
@@ -676,5 +750,22 @@ const UI = {
         this.toast(b.dataset.ms === 'file' ? 'BGM：原声' : 'BGM：八音盒');
       };
     });
+    /* 八音盒曲库：显示当前曲名 + 一键换下一首。
+       曲目行只在"八音盒"音源下才有意义（原声模式下它是一首外部 MP3）。 */
+    const nowEl = q('bgmNow');
+    const rowTrack = q('rowBgmTrack');
+    const useSynth = Store.data.settings.musicSrc !== 'file';
+    if (nowEl) nowEl.textContent = Sound.trackName();
+    if (rowTrack) rowTrack.classList.toggle('hidden', !useSynth);
+    const nb = q('btnBgmNext');
+    if (nb) nb.onclick = () => {
+      Sound.nextTrack();                 // 手动切：不淡出，立刻换
+      if (!Sound.musicTimer) Sound.applyMusic();   // 音乐关着的时候按一下，顺手打开
+      Store.data.settings.bgmTrack = Sound.trackIdx;
+      Store.save();
+      if (nowEl) nowEl.textContent = Sound.trackName();
+      Sound.ui();
+      this.toast('♪ ' + Sound.trackName());
+    };
   },
 };

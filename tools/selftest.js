@@ -169,16 +169,48 @@ const test = `
     Store.data.coins = 999999;
     const paid = CHARS.filter(c => c.price > 0)[0] || CHARS[0];
     const before = Store.data.chars.join('|');
+    const coins0 = Store.data.coins;
+    /* 防误触改成了"点两下确认"：第一下只该亮提示，绝不能扣钱解锁。
+       以前这里用的是原生 confirm()，在 iframe / 微信内置浏览器里会被静默拦截，
+       玩家点一下毫无反应 —— 反馈里"皮肤商城买不了"就是这么来的。 */
+    UI.buyChar(paid.id);
+    if (Store.data.chars.indexOf(paid.id) >= 0) throw new Error('first click must not unlock :: id=' + paid.id);
+    if (Store.data.coins !== coins0) throw new Error('first click must not charge :: ' + coins0 + ' -> ' + Store.data.coins);
     UI.buyChar(paid.id);
     if (Store.data.chars.indexOf(paid.id) < 0) {
       throw new Error('buy failed :: id=' + paid.id + ' before=' + before + ' after=' + Store.data.chars.join('|') +
         ' coins=' + Store.data.coins + ' price=' + paid.price);
     }
+    if (Store.data.coins !== coins0 - paid.price) throw new Error('charge mismatch :: ' + coins0 + ' -> ' + Store.data.coins);
     if (Store.data.char !== paid.id) throw new Error('equip failed');
     UI.buySkill('magnet'); UI.buySkill('magnet');
     if (Store.data.skills.magnet !== 2) throw new Error('skill failed');
-    CHARS.forEach(function (c) { UI.buyChar(c.id); });
+    /* 每个角色都要点两下；第一下只是进入确认态 */
+    CHARS.forEach(function (c) { UI.buyChar(c.id); UI.buyChar(c.id); });
     if (Store.data.chars.length !== CHARS.length) throw new Error('all unlock failed: ' + Store.data.chars.length);
+  });
+
+  // 一键解锁（破解模式）：一次性把角色/地图/技能/成就/图鉴/挑战/装扮全开
+  T('unlock everything', function () {
+    const d = Store.unlockEverything();
+    if (d.chars.length !== CHARS.length) throw new Error('chars ' + d.chars.length + '/' + CHARS.length);
+    if (d.coins < 999999) throw new Error('coins ' + d.coins);
+    if (typeof MAPS !== 'undefined' && d.mapsUnlocked.length !== MAPS.length) {
+      throw new Error('maps ' + d.mapsUnlocked.length + '/' + MAPS.length);
+    }
+    SKILLS.forEach(function (s) {
+      if ((d.skills[s.id] || 0) !== s.max) throw new Error('skill ' + s.id + ' = ' + d.skills[s.id]);
+    });
+    if (d.achClaimed.length !== ACHIEVEMENTS.length) throw new Error('ach ' + d.achClaimed.length + '/' + ACHIEVEMENTS.length);
+    if (typeof CODEX !== 'undefined' && d.codexSeen.length !== CODEX.length) {
+      throw new Error('codex ' + d.codexSeen.length + '/' + CODEX.length);
+    }
+    if (typeof CHALLENGES !== 'undefined' && d.challenges.length !== CHALLENGES.length) {
+      throw new Error('challenges ' + d.challenges.length + '/' + CHALLENGES.length);
+    }
+    CHARS.forEach(function (c) {
+      if (!d.outfitOwned[c.skin] || !d.outfitOwned[c.skin].length) throw new Error('outfit missing ' + c.skin);
+    });
   });
 
   // 长时间对局 + 随机输入
@@ -324,6 +356,7 @@ const test = `
         frequency: null, gain: null, Q: null, detune: null, delayTime: null,
         type: 'sine', buffer: null, loop: false,
         setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {},
+        cancelScheduledValues() {}, setTargetAtTime() {},
       };
       node.frequency = node; node.gain = node; node.Q = node; node.detune = node; node.delayTime = node;
       return node;
@@ -348,40 +381,92 @@ const test = `
     Sound.coin(3); Sound.jump(); Sound.land(); Sound.roll(); Sound.whoosh(); Sound.power();
     Sound.board(); Sound.boardBreak(); Sound.crash(); Sound.laugh(); Sound.ui(); Sound.deny();
     Sound.buy(); Sound.mission(); Sound.countdown(true); Sound.revive();
-    for (let s = 0; s < 256; s++) Sound.scheduleStep(s, s * 0.1, 0.1);
+    /* 每首曲子的每一槽都排一遍，等于把整本曲库过一遍发声代码 */
+    for (let ti = 0; ti < Sound.TRACKS.length; ti++) {
+      Sound.setTrack(ti);
+      const n = Sound.TRACKS[ti].slots * Sound.TRACKS[ti].bars;
+      for (let s = 0; s < n; s++) Sound.scheduleStep(s, s * 0.1);
+    }
+    Sound.setTrack(0);
     Sound.stopMusic();
     Sound.setMusic(false);
   });
 
-  /* 乐谱自检：八音盒那套谱子是手写的，很容易手滑少写一格或写出调外的音。
-     这里把结构性错误钉死——每小节必须正好 16 个槽、每段 8 小节、
-     旋律音落在合理音域内、循环点上必须是 E7 接回 Am7。 */
+  /* 乐谱自检：曲库里的谱子全是手写的，很容易手滑少写一格或写出调外的音。
+     这里把结构性错误钉死——每小节的槽数必须和 slots 对齐、A/B 段各占一半小节、
+     旋律音落在合理音域内、鼓谱长度对齐、第一首的循环点上必须是 E7 接回 Am7。 */
   T('bgm score', function () {
-    const secs = [Sound.melA, Sound.melB];
-    const chords = [Sound.chordsA, Sound.chordsB];
-    for (let s = 0; s < secs.length; s++) {
-      if (secs[s].length !== 8) throw new Error('旋律段 ' + s + ' 不是 8 小节');
-      if (chords[s].length !== 8) throw new Error('和弦段 ' + s + ' 不是 8 小节');
-      for (let b = 0; b < 8; b++) {
-        if (secs[s][b].length !== 16) throw new Error('旋律 ' + s + '/' + b + ' 槽数 ' + secs[s][b].length);
-        for (const n of secs[s][b]) {
-          if (n === 0) continue;
-          if (n < 55 || n > 90) throw new Error('旋律音越界 MIDI ' + n);
+    const tracks = Sound.TRACKS;
+    if (!tracks || tracks.length < 4) throw new Error('曲库不足 4 首：' + (tracks ? tracks.length : 0));
+    const seen = {};
+    for (const T2 of tracks) {
+      const tag = T2.id || '?';
+      if (!T2.id) throw new Error('曲目缺 id');
+      if (seen[tag]) throw new Error('曲目 id 重复：' + tag);
+      seen[tag] = 1;
+      if (!T2.name) throw new Error(tag + ' 缺曲名');
+      if (!(T2.tempo >= 60 && T2.tempo <= 200)) throw new Error(tag + ' tempo 不合理 ' + T2.tempo);
+      const slots = T2.slots, bars = T2.bars;
+      if (slots !== 16 && slots !== 12) throw new Error(tag + ' slots 只能是 16 或 12，现在是 ' + slots);
+      if (bars % 2 !== 0) throw new Error(tag + ' bars 必须是偶数（A/B 段各一半）');
+      if (!Sound.LEADS[T2.lead]) throw new Error(tag + ' 未知主音音色 ' + T2.lead);
+      if (!T2.bass || !T2.bass.type) throw new Error(tag + ' 缺贝斯定义');
+      if (!T2.pad || !(T2.pad.vol > 0)) throw new Error(tag + ' 缺和弦垫定义');
+      const drum = T2.drums || '';
+      if (drum.length !== slots) throw new Error(tag + ' 鼓谱长度 ' + drum.length + ' ≠ slots ' + slots);
+      for (const c of drum) if ('ksXx.'.indexOf(c) < 0) throw new Error(tag + ' 鼓谱有非法字符 "' + c + '"');
+
+      const secs = [T2.melA, T2.melB];
+      const chords = [T2.chordsA, T2.chordsB];
+      for (let s = 0; s < 2; s++) {
+        if (!secs[s] || secs[s].length !== bars / 2) {
+          throw new Error(tag + ' 旋律段 ' + s + ' 小节数 ' + (secs[s] ? secs[s].length : '缺失') + '，应为 ' + bars / 2);
         }
-        const ch = chords[s][b];
-        if (ch.length < 3) throw new Error('和弦 ' + s + '/' + b + ' 音数不足');
-        for (const n of ch) if (n < 40 || n > 72) throw new Error('和弦音越界 MIDI ' + n);
+        if (!chords[s] || chords[s].length !== bars / 2) {
+          throw new Error(tag + ' 和弦段 ' + s + ' 小节数 ' + (chords[s] ? chords[s].length : '缺失') + '，应为 ' + bars / 2);
+        }
+        for (let b = 0; b < bars / 2; b++) {
+          if (secs[s][b].length !== slots) throw new Error(tag + ' 旋律 ' + s + '/' + b + ' 槽数 ' + secs[s][b].length + ' ≠ ' + slots);
+          for (const n of secs[s][b]) {
+            if (n === 0) continue;
+            if (n < 55 || n > 92) throw new Error(tag + ' 旋律音越界 MIDI ' + n);
+          }
+          const ch = chords[s][b];
+          if (ch.length < 3) throw new Error(tag + ' 和弦 ' + s + '/' + b + ' 音数不足');
+          for (const n of ch) if (n < 40 || n > 72) throw new Error(tag + ' 和弦音越界 MIDI ' + n);
+        }
       }
+      /* 旋律留白率：太满会吵，太空会散 */
+      let noteCount = 0, slotN = 0;
+      for (const sec of secs) for (const bar of sec) for (const n of bar) { slotN++; if (n) noteCount++; }
+      const density = noteCount / slotN;
+      if (density < 0.08 || density > 0.42) throw new Error(tag + ' 旋律密度 ' + density.toFixed(2) + ' 不在 0.08~0.42');
     }
-    /* 循环点：B 段最后一小节是 E7（根音 52 = E3，含 G#=56），收束回 A 段的 Am7 */
-    const lastB = Sound.chordsB[7];
-    if (lastB[0] !== 52 || lastB.indexOf(56) < 0) throw new Error('B 段结尾不是 E7，循环接不上');
-    if (Sound.chordsA[0][0] !== 57) throw new Error('A 段开头不是 Am');
-    /* 旋律留白率：太满会吵，太空会散，控制在一个区间里 */
-    let noteCount = 0, slots = 0;
-    for (const sec of secs) for (const bar of sec) for (const n of bar) { slots++; if (n) noteCount++; }
-    const density = noteCount / slots;
-    if (density < 0.12 || density > 0.42) throw new Error('旋律密度 ' + density.toFixed(2) + ' 不在 0.12~0.42');
+    /* 签名曲（第一首）的循环点：B 段最后是 E7（根音 52，含 G#=56），收束回 A 段的 Am7 */
+    const t0 = tracks[0];
+    if (t0.chordsA[0][0] !== 57) throw new Error('第一首开头不是 Am');
+    const lastB = t0.chordsB[t0.bars / 2 - 1];
+    if (lastB[0] !== 52 || lastB.indexOf(56) < 0) throw new Error('第一首 B 段结尾不是 E7，循环接不上');
+  });
+
+  /* 播放列表：轮播顺序、换曲后计数归零、每首的速度各走各的 */
+  T('bgm playlist', function () {
+    const n = Sound.TRACKS.length;
+    if (n < 4) throw new Error('曲库太少：' + n);
+    Sound.setTrack(0);
+    const seen = [];
+    for (let i = 0; i < n; i++) { seen.push(Sound.trackIdx); Sound.nextTrack(); }
+    if (seen[0] !== 0) throw new Error('setTrack(0) 没生效');
+    for (let i = 1; i < n; i++) if (seen[i] !== i) throw new Error('轮播顺序乱了：' + seen.join(','));
+    if (Sound.trackIdx !== 0) throw new Error('轮了一圈没回到第一首：' + Sound.trackIdx);
+    if (Sound.formsPlayed !== 0) throw new Error('换曲后 formsPlayed 没归零');
+    if (Sound.nextTrack() === Sound.nextTrack()) throw new Error('连续换两次居然还是同一首');
+    /* 槽时长必须跟着各首自己的 tempo 走，不能五首都用同一个速度 */
+    const durs = Sound.TRACKS.map((t, i) => { Sound.setTrack(i); return Sound.slotDur(); });
+    if (Math.max.apply(null, durs) - Math.min.apply(null, durs) < 0.01) {
+      throw new Error('五首曲子的速度几乎一样，那就还是单调：' + durs.map(d => d.toFixed(3)).join('/'));
+    }
+    Sound.setTrack(0);
   });
 
   /* BGM 音源回落：这个测试环境里没有 Audio 构造器（也就是"浏览器不支持

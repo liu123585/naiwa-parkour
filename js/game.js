@@ -50,6 +50,8 @@ const Game = {
     /* 音源要先设，setMusic 内部的 applyMusic 会按它决定放合成还是原声 */
     Sound.setMusicSrc(s.musicSrc || 'synth');
     Sound.setMusic(s.music);
+    /* 记住上次手动选的曲目（自动轮播不写盘，只有玩家点"换一首"才存） */
+    if (typeof s.bgmTrack === 'number' && Sound.setTrack) Sound.setTrack(s.bgmTrack);
     Renderer.quality = s.quality;
     /* 画质档变了，描边/颗粒这些"锦上添花"的开合也要跟着重判一次 */
     if (Renderer.applyDetail) Renderer.applyDetail();
@@ -271,6 +273,24 @@ const Game = {
     const supA = Math.min(this._prevTravel, this.travel) - 0.42;
     const supB = Math.max(this._prevTravel, this.travel) + 0.42;
     for (const o of this.objs) {
+      /* ---- 缓行楼梯：支撑面 = 你在梯段上走了多少 → 爬多高 ----
+         这是"直接走上去"的关键：不靠跳、不靠弹射，
+         只要人还在梯段 z 区间里，脚下的地就一路从 base 抬到 climb。
+         update 里那句 `p.y <= support && p.vy <= 0 → p.y = support`
+         会把人每帧往上顶一丁点，于是看起来就是顺着台阶跑上去了。
+         用 travel（而不是 player 的 z）来算进度，和支撑面判定同一套口径，
+         掉帧时也不会因为跨帧而漏掉一整段。 */
+      if (o.stair) {
+        if (Math.abs(p.x - o.x) > o.hw + 0.22) continue;
+        if (supB < o.worldZ || supA > o.worldZ + o.len) continue;
+        const b0 = o.base || 0;
+        /* 分母收 0.45 米：让人在梯段结束前就踩满高度，留一小块平台。
+           否则高速时会出现"人还差半米才到顶、车厢的扫掠窗口已经压过来"，
+           collide 里按 py < h-0.18 判成正面撞车 —— 明明顺着楼梯上来的却撞死。 */
+        const t = Utils.clamp((this.travel - o.worldZ) / Math.max(0.4, o.len - 0.45), 0, 1);
+        support = Math.max(support, b0 + t * ((o.climb || o.y1 || 1.35) - b0));
+        continue;
+      }
       if (o.kind !== 'train') continue;
       if (Math.abs(p.x - o.x) > o.hw + 0.22) continue;
       if (supB < o.worldZ || supA > o.worldZ + o.len) continue;
@@ -589,6 +609,12 @@ const Game = {
       return;
     }
 
+    /* ---- 楼梯：只负责把玩家托上去，永远不撞（支撑面在 update 里单独算） ---- */
+    if (o.stair) {
+      if (!o.seen) { o.seen = true; this.markCodex(o); }
+      return;
+    }
+
     /* ---- 障碍 / 车厢 ---- */
     const len = o.len || 0.6;
     const oz0 = o.worldZ, oz1 = o.worldZ + len;
@@ -875,11 +901,20 @@ const Game = {
     const D = {
       barrier: { hw: 0.95, len: 0.55, y0: 0, y1: 1.05 },
       dumpster: { hw: 0.84, len: 1.55, y0: 0, y1: 1.30 },
-      highbar: { hw: 1.15, len: 0.30, y0: 1.35, y1: 2.55 },
+      /* 限高门：下沿 1.30（站立 1.72 必撞、滑铲 0.86 能过），上沿抬到 3.20
+         —— 跳跃最高点才 1.68m，抬到 3.20 就是明确告诉你"别想从上面翻过去"。
+         以前 y1 只有 2.55、而画面上那根横杆挂在 1.72 米处，看着像能跨，
+         玩家一跳发现过不去，就会觉得"碰撞没做"（反馈原话就是这个意思）。 */
+      highbar: { hw: 1.15, len: 0.42, y0: 1.30, y1: 3.20 },
       cone: { hw: 0.42, len: 0.5, y0: 0, y1: 0.66 },
       spring: { hw: 0.85, len: 1.1, y0: 0, y1: 0.42, spring: true },
       /* ---- 新增障碍 ---- */
-      tunnel: { hw: 1.18, len: 3.0, y0: 1.30, y1: 2.60 },                       // 限高隧道：必须滑铲
+      tunnel: { hw: 1.18, len: 3.0, y0: 1.26, y1: 3.10 },                       // 限高隧道：必须滑铲
+      /* 缓行楼梯：一路把支撑面从 base 抬到 climb，跑上去就直接站上车顶。
+         base 默认 0（从地面起步）；base>0 就是"从这节车厢爬到更高那节"的接力楼梯。
+         len 在 addObstacle 里按爬升高度现算（坡度恒定 ≈17°），
+         所以这里给的 len 只是个占位值。 */
+      stairs: { hw: 1.02, len: 4.4, y0: 0, y1: 1.35, stair: true, climb: 1.35, base: 0 },
       turnstile: { hw: 0.72, len: 0.45, y0: 0, y1: 2.20 },                      // 闸机：跳不过也滑不过，只能变道
       ramp: { hw: 0.90, len: 2.2, y0: 0, y1: 0.50, spring: true, ramp: true, launch: 12 },  // 斜坡：冲上去正好落到矮车厢顶
       sweeper: { hw: 0.55, len: 0.5, y0: 0, y1: 1.00, sweep: true },            // 横扫杆：左右摆动，掐时机跳过
@@ -889,6 +924,15 @@ const Game = {
       gantry: { hw: 1.60, len: 0.30, y0: 0, y1: 4.00, decor: true },
     }[type];
     Object.assign(base, D, extra || {});
+    /* 楼梯的深度由"要爬多高"反推：climb 1.35 → 深 4.3 米（约 17°，是"缓行"）。
+       太陡就成了跳板，太缓则一跑而过没有爬坡感。
+       base>0 时爬升量是 (climb - base)，接力楼梯才不会莫名其妙变长。 */
+    if (base.stair) {
+      base.climb = base.climb || 1.35;
+      base.base = base.base || 0;
+      base.len = Math.max(2.8, (base.climb - base.base) * 3.2);
+      base.y0 = base.base; base.y1 = base.climb;
+    }
     this.objs.push(base);
     return base;
   },
@@ -1061,6 +1105,48 @@ const Gen = {
       for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 6 + i * 2.3, G.laneX(lane), 1.9);
       G.z += len + 13;
     } },
+    /* 缓行楼梯：不用跳、不用弹射，直接一路跑上车顶。
+       和 rampRoof 是两种手感 —— ramp 是"冲上去被弹飞"，楼梯是"顺着台阶走上去"，
+       上去之后接一条完整的车顶金币线，这才是用户要的"跟地铁跑酷一样"。
+       楼梯的深度由 addObstacle 按 climb 现算（≈17°），这里必须用同一个公式，
+       否则车体会和梯段错开，出现"爬到头发现前面还有一米空隙"的断崖。 */
+    { id: 'stairsRoof', w: () => 9 + Gen.diffGuess * 7, fn: (G) => {
+      const lane = Utils.irand(0, 2);
+      const h = Utils.pick([1.35, 1.35, 1.35, 2.25]);     // 以矮车厢为主，偶尔来一节中车厢
+      const len = Utils.irand(18, 30);
+      const st = Math.max(2.8, h * 3.2);                  // 楼梯深度（和 addObstacle 同一公式）
+      Game.addObstacle('stairs', lane, { worldZ: G.z, climb: h });
+      Game.addTrain(G.z + st, lane, len, h);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) {
+        Game.addCoin(G.z + st + 2 + i * 2.3, G.laneX(lane), h + 0.55);
+      }
+      Game.addPower(G.z + st + len * 0.62, G.laneX(lane), h + 1.5, Utils.pick(POWERS).id);
+      const other = (lane + 1) % 3;
+      for (let i = 0; i < 4; i++) Game.addCoin(G.z + st + 3 + i * 2.2, G.laneX(other), 0.85);
+      G.z += st + len + 13;
+    } },
+    /* 双层车顶：先走楼梯上矮车厢，再从矮车厢的车顶走第二段楼梯爬上更高的车厢。
+       地铁跑酷里最上瘾的就是这种"一路往上爬、越爬越高"的段落 ——
+       它逼你连做两次判断（要不要上车顶 / 上了车顶还敢不敢再上），
+       而两次判断的容错窗口完全不同，这才是"考验随机应变"。
+       第二段楼梯的 base 必须等于前一段的 climb，不然中间会断出个悬崖。 */
+    { id: 'doubleRoof', w: () => Gen.diffGuess > 0.18 ? 4 + Gen.diffGuess * 8 : 0, fn: (G) => {
+      const lane = Utils.irand(0, 2);
+      const h1 = 1.35, h2 = 2.70;
+      const st1 = Math.max(2.8, h1 * 3.2);
+      const st2 = Math.max(2.8, (h2 - h1) * 3.2);
+      const len1 = Utils.irand(12, 16), len2 = Utils.irand(14, 20);
+      Game.addObstacle('stairs', lane, { worldZ: G.z, climb: h1, base: 0 });
+      Game.addTrain(G.z + st1, lane, len1, h1);
+      Game.addObstacle('stairs', lane, { worldZ: G.z + st1 + len1, climb: h2, base: h1 });
+      Game.addTrain(G.z + st1 + len1 + st2, lane, len2, h2);
+      for (let i = 0; i < Math.floor(len1 / 2.3); i++) Game.addCoin(G.z + st1 + 2 + i * 2.3, G.laneX(lane), h1 + 0.55);
+      for (let i = 0; i < Math.floor(len2 / 2.3); i++) Game.addCoin(G.z + st1 + len1 + st2 + 2 + i * 2.3, G.laneX(lane), h2 + 0.55);
+      Game.addPower(G.z + st1 + len1 + st2 + len2 * 0.6, G.laneX(lane), h2 + 1.5, Utils.pick(POWERS).id);
+      const other = (lane + 2) % 3;
+      for (let i = 0; i < 5; i++) Game.addCoin(G.z + 4 + i * 2.2, G.laneX(other), 0.85);
+      G.z += st1 + len1 + st2 + len2 + 14;
+    } },
     /* 横扫杆：在两条车道之间来回摆，掐时机跳过 */
     { id: 'sweeper', w: () => 6 + Gen.diffGuess * 7, fn: (G) => {
       const ls = [0, 1, 2].sort(() => Math.random() - 0.5);
@@ -1201,7 +1287,7 @@ Object.assign(Game, {
         if (o.kind === 'train') {
           Renderer.drawTrain({ x0: o.x - o.hw, x1: o.x + o.hw, y0: 0, y1: o.h, z0: zr, z1: zr + o.len, color: o.color, headlight: o.headlight, h: o.h });
         } else if (o.kind === 'obstacle') {
-          Renderer.drawObstacle({ type: o.otype, x: o.x, z: zr, hw: o.hw, len: o.len, y0: o.y0, y1: o.y1, ramp: o.ramp });
+          Renderer.drawObstacle({ type: o.otype, x: o.x, z: zr, hw: o.hw, len: o.len, y0: o.y0, y1: o.y1, ramp: o.ramp, climb: o.climb, base: o.base, stair: o.stair });
         } else if (o.kind === 'coin') {
           Renderer.drawCoin({ x: o.x, y: o.y, z: zr, spin: o.spin, scale: 1 });
         } else if (o.kind === 'power') {

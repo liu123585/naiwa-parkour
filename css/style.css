@@ -270,6 +270,11 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .about-text{font-size:11.5px;color:#8a9099;line-height:1.7}
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;font-weight:700;font-size:15px;border-bottom:1px solid #eef1f5}
 .setting-row:last-of-type{border-bottom:none}
+/* 曲目行：左边一个会变的名字，右边一个小按钮 */
+.bgm-pick{display:flex;align-items:center;gap:8px}
+.bgm-now{font-size:13px;font-weight:900;color:var(--green-d);background:rgba(124,212,74,.16);padding:5px 10px;border-radius:10px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.btn-mini{padding:6px 12px !important;font-size:13px !important;border-radius:10px !important;box-shadow:0 3px 0 var(--milk-d) !important}
+.btn-danger.confirming{background:linear-gradient(180deg,#ffd06a,#f5b21a);color:#6a4500;animation:confirmPulse .8s ease-in-out infinite alternate}
 
 /* 角色卡 */
 .char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
@@ -285,6 +290,10 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .char-card.active{border-color:var(--green);box-shadow:0 0 0 3px rgba(124,212,74,.3),0 10px 20px rgba(0,0,0,.12)}
 .char-card.active::after{content:"使用中";position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;font-size:10.5px;font-weight:900;padding:3px 10px;border-radius:9px;white-space:nowrap}
 .char-card.locked{filter:grayscale(.55) brightness(.96)}
+/* 等第二次点击确认的那张卡：取消灰度、金色脉冲，让玩家一眼看到该点哪 */
+.char-card.confirming{filter:none;border-color:#f5b21a;animation:confirmPulse .8s ease-in-out infinite alternate}
+.char-card.confirming .cprice{background:#ffe9a8;color:#8a5a00;box-shadow:0 3px 0 #e0c274}
+@keyframes confirmPulse{from{box-shadow:0 0 0 3px rgba(245,178,26,.30)}to{box-shadow:0 0 0 8px rgba(245,178,26,.06)}}
 .char-card.cant .cprice{background:#eceef2;color:#98a0ab;box-shadow:0 3px 0 #dfe3e9}
 
 /* 技能 */

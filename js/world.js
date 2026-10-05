@@ -161,7 +161,7 @@ OUTFITS.forEach(o => { OUTFIT_MAP[o.key] = o; });
 function outfitsOf(skin) { return OUTFITS.filter(o => o.skin === skin); }
 function outfitKey(skin, id) { return skin + ':' + (id || 'origin'); }
 
-/* ---------------- 障碍图鉴（18 种） ---------------- */
+/* ---------------- 障碍图鉴（21 种） ---------------- */
 const CODEX = [
   { id: 'barrier', name: '护栏', kind: '跳过', icon: 'barrier', desc: '橙白相间的小护栏，直接跳过去。' },
   { id: 'cone', name: '交通锥', kind: '跳过', icon: 'cone', desc: '检修用的锥桶，跳一下就过了。' },
@@ -183,6 +183,7 @@ const CODEX = [
   { id: 'gantry', name: '龙门架', kind: '环境', icon: 'gantry', desc: '接触网支架，从下方穿过去。' },
   { id: 'turnstile', name: '闸机', kind: '变道', icon: 'turnstile', desc: '齐人高的检票闸机，跳不过也钻不过，只能变道绕开。' },
   { id: 'sweeper', name: '横扫杆', kind: '互动', icon: 'sweeper', desc: '在两条车道之间来回摆动的横杆，看准节奏跳过去。' },
+  { id: 'stairs', name: '缓行楼梯', kind: '车顶', icon: 'stairs', desc: '通向车顶的缓坡楼梯，不用跳，顺着跑上去就能站上车顶。' },
 ];
 
 /* 障碍类型 → 图鉴条目 */
@@ -191,7 +192,7 @@ const CODEX_MAP = {
   spring: 'spring', ramp: 'ramp', tunnel: 'tunnel', signal: 'signal',
   puddle: 'puddle', gantry: 'gantry', train_low: 'train_low', train_mid: 'train_mid',
   train_high: 'train_high', oncoming: 'oncoming',
-  turnstile: 'turnstile', sweeper: 'sweeper',
+  turnstile: 'turnstile', sweeper: 'sweeper', stairs: 'stairs',
   coin_line: 'coin_line', roof_coins: 'roof_coins',
   barrier_double: 'barrier_double', gap_train: 'gap_train',
 };

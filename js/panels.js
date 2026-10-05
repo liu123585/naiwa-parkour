@@ -273,6 +273,13 @@ const Panels = {
         box(10, 34, 80, 11, '#cc4a3c', 3);
         box(38, 74, 24, 8, '#7a818b', 3);
         break;
+      case 'stairs':
+        for (let i = 0; i < 4; i++) {
+          const h = 12 + i * 12;
+          box(14 + i * 18, 78 - h, 20, h, i % 2 ? '#8f959e' : '#7c828b', 2);
+        }
+        box(10, 26, 82, 6, '#5f666e', 3);
+        break;
       default:
         box(20, 30, 60, 40, '#c9ccd2', 6);
     }

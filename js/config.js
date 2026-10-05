@@ -341,6 +341,32 @@ const Store = {
     try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
     this.data = JSON.parse(JSON.stringify(DEFAULT_SAVE));
   },
+
+  /* 一键解锁全部（破解模式）。
+     角色 / 服装 / 地图 / 技能 / 图鉴 / 成就 / 挑战全部拉满，再给一大笔金币和悬浮板。
+     ⚠️ 这里引用的 MAPS / OUTFITS / CODEX / CHALLENGES 都在 world.js 里，
+     它们是**运行时**才求值的（调用时 world.js 早就加载完了），所以不会踩加载顺序的坑。
+     d.challenges 直接标成"全部完成"——破解版的语义就是全亮，不是留一半让玩家自己刷。 */
+  unlockEverything() {
+    const d = this.data;
+    d.coins = 999999;
+    d.chars = CHARS.map(c => c.id);
+    if (typeof MAPS !== 'undefined') d.mapsUnlocked = MAPS.map(m => m.id);
+    d.skills = {};
+    SKILLS.forEach(s => { d.skills[s.id] = s.max; });
+    d.outfitOwned = {};
+    CHARS.forEach(c => {
+      d.outfitOwned[c.skin] = (typeof OUTFITS !== 'undefined')
+        ? OUTFITS.filter(o => o.skin === c.skin).map(o => o.id)
+        : ['origin'];
+    });
+    d.achClaimed = ACHIEVEMENTS.map(a => a.id);
+    if (typeof CODEX !== 'undefined') d.codexSeen = CODEX.map(x => x.id);
+    if (typeof CHALLENGES !== 'undefined') d.challenges = CHALLENGES.map(x => x.id);
+    d.boardCount = 99;
+    this.save();
+    return d;
+  },
 };
 
 /* ---------------- 工具函数 ---------------- */

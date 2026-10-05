@@ -60,7 +60,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
         } else if (it.kind === 'coin') {
           G.addCoin(1000 + it.z, LANE(it.lane), it.y == null ? 0.85 : it.y);
         } else {
-          G.addObstacle(it.type, it.lane, { worldZ: 1000 + it.z });
+          G.addObstacle(it.type, it.lane, Object.assign({ worldZ: 1000 + it.z }, it.extra || {}));
         }
       }
     }
@@ -68,12 +68,14 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     function run(o) {
       setup(o);
       const G = Game;
-      let jumped = false, rolled = false, hitAt = -1;
+      let jumped = false, rolled = false, hitAt = -1, maxY = 0, onRoofSeen = false;
       const n = o.frames || 120;
       for (let i = 0; i < n; i++) {
         if (o.jumpAt != null && !jumped && G.travel >= o.jumpAt) { G.jump(); jumped = true; }
         if (o.rollAt != null && !rolled && G.travel >= o.rollAt) { G.roll(); rolled = true; }
         G.update(o.dt);
+        if (G.player.y > maxY) maxY = G.player.y;
+        if (G.player.supportY > 0.25) onRoofSeen = true;
         if (G.dying > 0 || G.chase.hits > 0) { hitAt = i; break; }
       }
       const p = G.player;
@@ -82,7 +84,8 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
         hitAt: hitAt,
         travel: Math.round(G.travel),
         y: Math.round(p.y * 100) / 100,
-        onRoof: p.supportY > 0.25,
+        maxY: Math.round(maxY * 100) / 100,
+        onRoof: p.supportY > 0.25 || onRoofSeen,
         roofs: G.runStats.roofs,
         near: G.runStats.near,
         coins: G.runStats.coins,
@@ -135,6 +138,60 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     /* ---- 10. 擦身而过要计数（跨过栏杆给奖励） ---- */
     r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 120, jumpAt: 1001, obs: [{ type: 'barrier', lane: 1, z: 14 }] });
     add('跨越后记擦身', 'yes', r.near > 0 ? 'yes' : 'no');
+
+    /* ---- 11. 跳起来撞限高门：上沿抬到 3.2 之后，跳跃(顶点 1.68m)必须撞 ---- */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 120, jumpAt: 1002, obs: [{ type: 'highbar', lane: 1, z: 14 }] });
+    add('跳起撞限高门', 'hit', r.hit ? 'hit' : 'pass');
+
+    /* ---- 12. 站着进隧道：净空 1.26m < 站立 1.72m，必撞 ---- */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 120, obs: [{ type: 'tunnel', lane: 1, z: 14 }] });
+    add('站着撞隧道顶', 'hit', r.hit ? 'hit' : 'pass');
+
+    /* ---- 13. 滑铲过隧道：0.86m < 1.26m 净空，能过 ---- */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 140, rollAt: 990, obs: [{ type: 'tunnel', lane: 1, z: 14 }] });
+    add('滑铲过隧道', 'pass', r.hit ? 'hit' : 'pass');
+
+    /* ---- 14. 缓行楼梯：不跳不滑，直接跑上车顶 ---- */
+    r = run({
+      speed: 40, dt: 1 / 60, px: 0, frames: 200,
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
+            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+    });
+    add('走楼梯上车顶', 'pass', r.hit ? 'hit' : 'pass');
+    add('楼梯上到车顶', 'yes', r.onRoof || r.roofs > 0 ? 'yes' : 'no');
+
+    /* ---- 15. 楼梯只有一格宽：站隔壁道不该被托上去 ---- */
+    r = run({
+      speed: 40, dt: 1 / 60, px: LANE(0), frames: 200,
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
+            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+    });
+    add('隔壁道不被楼梯托起', 'no', r.y > 0.3 ? 'yes' : 'no');
+
+    /* ---- 16. 双层车顶：楼梯 → 矮车厢 → 楼梯 → 高车厢，全程不该撞 ---- */
+    {
+      const h1 = 1.35, h2 = 2.70;
+      const st1 = Math.max(2.8, h1 * 3.2), st2 = Math.max(2.8, (h2 - h1) * 3.2);
+      r = run({
+        speed: 40, dt: 1 / 60, px: 0, frames: 300,
+        obs: [
+          { type: 'stairs', lane: 1, z: 10, extra: { climb: h1, base: 0 } },
+          { kind: 'train', lane: 1, z: 10 + st1, len: 14, h: h1 },
+          { type: 'stairs', lane: 1, z: 10 + st1 + 14, extra: { climb: h2, base: h1 } },
+          { kind: 'train', lane: 1, z: 10 + st1 + 14 + st2, len: 18, h: h2 },
+        ],
+      });
+      add('双层车顶全程不撞', 'pass', r.hit ? 'hit' : 'pass');
+      add('双层爬到 2.7 米高', 'yes', r.maxY > 2.3 ? 'yes' : 'no');
+    }
+
+    /* ---- 17. 高速 + 掉帧上楼梯：最容易出现"差半米没到顶就被判撞车" ---- */
+    r = run({
+      speed: 47, dt: 1 / 30, px: 0, frames: 120,
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
+            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+    });
+    add('掉帧高速上楼梯', 'pass', r.hit ? 'hit' : 'pass');
 
     return T;
   });

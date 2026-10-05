@@ -918,10 +918,12 @@ const Pinch3D = {
       /* 车顶封条 */
       R.box(cx, o.y0 + h + 0.06, cz, w * 0.94, 0.12, len * 0.95, R.dark(base, 1.22), { flat: true });
 
-      /* 车头灯 */
+      /* 车头灯：迎面列车是朝玩家开的（worldZ 每帧递减），
+         所以"车头"是靠近玩家的那一端 z0，不是远端 z1。
+         以前画在 cz + len/2（远端）—— 等于把车灯装在了车屁股上。 */
       if (o.headlight) {
         for (const s of [-1, 1]) {
-          R.box(cx + s * w * 0.30, o.y0 + 0.52, cz + len / 2 + 0.04, 0.30, 0.22, 0.07, '#fffbe0', { unlit: true });
+          R.box(cx + s * w * 0.30, o.y0 + 0.52, cz - len / 2 - 0.05, 0.30, 0.22, 0.07, '#fffbe0', { unlit: true });
         }
       }
     },
@@ -931,8 +933,14 @@ const Pinch3D = {
       if (!Pinch3D.ready) return;
       const R = Pinch3D;
       const x = o.x, z = R.wz(o.z);
-      /* 底下一律先摊一块影，不然道具看着像浮在半空 */
-      if (o.type !== 'puddle') R.flatShadow(x - 0.62, z + 0.06, 2.9, 2.5, 0.38);
+      /* 底下一律先摊一块影，不然道具看着像浮在半空。
+         楼梯是长条结构，那块 2.5 米的通用小圆影根本盖不住，单独摊一条长的。 */
+      if (o.type === 'stairs') {
+        const SL = o.len || 4.4;
+        R.flatShadow(x - 0.5, z + SL * 0.5, 3.4, SL * 1.06, 0.36);
+      } else if (o.type !== 'puddle') {
+        R.flatShadow(x - 0.62, z + 0.06, 2.9, 2.5, 0.38);
+      }
       switch (o.type) {
         case 'barrier':   /* 冰棍棒栏杆 + 红白胶带 */
           for (const s of [-1, 1]) R.box(x + s * 0.85, 0.55, z, 0.12, 1.1, 0.12, '#b9ac95', { flat: true });
@@ -949,20 +957,36 @@ const Pinch3D = {
           R.box(x, 0.62, z, 1.5, 1.24, 1.3, '#4a8a46', { flat: true });
           R.box(x, 1.30, z, 1.58, 0.15, 1.38, '#3a6b37', { flat: true });
           break;
-        case 'highbar':   /* 限高架：跳不过去，只能滑铲 */
-          for (const s of [-1, 1]) R.box(x + s * 1.05, 0.9, z, 0.16, 1.8, 0.16, '#8d939c', { flat: true });
-          R.box(x, 1.72, z, 2.3, 0.30, 0.30, '#cc4a3c', { flat: true });
-          R.box(x, 1.72, z, 2.34, 0.16, 0.34, '#f2ece0', { flat: true });
+        case 'highbar': { /* 限高门：下沿 1.30 就是"必须滑铲"的那条线，上面一路封到 3.2 米。
+                             以前只在 1.72 米处挂一根横杆、碰撞却按 2.55 算，
+                             视觉和判定对不上，玩家一跳发现过不去就说"碰撞没做"。 */
+          const clear = o.y0 || 1.30, topY = o.y1 || 3.20;
+          for (const s of [-1, 1]) R.box(x + s * 1.05, topY / 2, z, 0.16, topY, 0.30, '#8d939c', { flat: true });
+          R.box(x, clear + 0.16, z, 2.26, 0.32, 0.30, '#cc4a3c', { flat: true });    // 红横梁：下沿即净空线
+          R.box(x, clear - 0.01, z, 2.30, 0.12, 0.34, '#f2ece0', { flat: true });    // 白色警示边
+          /* 横梁以上的竖向栅栏：一眼就知道"上面也过不去" */
+          for (let i = -1; i <= 1; i++) {
+            R.box(x + i * 0.72, (clear + 0.32 + topY) / 2, z, 0.15, topY - clear - 0.32, 0.16, '#9aa1a8', { flat: true });
+          }
           break;
+        }
         case 'spring':
         case 'ramp':      /* 弹跳垫 / 坡道 */
           R.box(x, 0.16, z, 1.5, 0.22, 1.1, o.type === 'spring' ? '#a17cf5' : '#9aa1aa', { rx: -0.34, flat: true });
           R.box(x, 0.34, z + 0.30, 1.2, 0.06, 0.24, '#ffd34d', { unlit: true });
           break;
-        case 'tunnel':    /* 纸筒隧道 */
-          for (const s of [-1, 1]) R.box(x + s * 1.3, 1.3, z, 0.34, 2.6, 0.9, '#6b717a', { flat: true });
-          R.box(x, 2.75, z, 3.0, 0.40, 0.9, '#7a818b', { flat: true });
+        case 'tunnel': {  /* 限高隧道：顶棚下沿就是 1.26 米，站着进去必撞。
+                             旧版只在 worldZ 那一处画了个 0.9 米深的门框，
+                             可碰撞区间是从 worldZ 一路延伸到 worldZ+3 ——
+                             于是玩家会"撞在什么都没有的空气上"。现在整体铺满整段。 */
+          const L = o.len || 3.0, cz2 = z + L / 2;
+          const clr = o.y0 || 1.26, tY = o.y1 || 3.10;
+          for (const s of [-1, 1]) R.box(x + s * 1.30, tY / 2, cz2, 0.32, tY, L, '#6b717a', { flat: true });
+          R.box(x, clr + 0.36, cz2, 3.02, 0.72, L, '#7a818b', { flat: true });               // 顶棚主体
+          R.box(x, clr - 0.02, cz2, 3.04, 0.16, L * 1.01, '#e0b23a', { unlit: true });      // 下沿警示带
+          R.box(x, tY - 0.16, cz2, 3.10, 0.32, L, '#5f666e', { flat: true });                // 顶部横梁
           break;
+        }
         case 'signal':    /* 信号灯 */
           R.tube(x, 1.2, z, 0.07, 2.4, '#737a84', 8);
           R.box(x, 2.55, z, 0.42, 0.70, 0.30, '#2e333b', { flat: true });
@@ -986,6 +1010,43 @@ const Pinch3D = {
           R.box(x, 0.55, z, 0.22, 1.10, 0.22, '#e0b23a', { flat: true });
           R.box(x, 1.00, z, 2.20, 0.16, 0.16, '#cc4a3c', { flat: true });
           break;
+        case 'stairs': {  /* 缓行楼梯：一级级台阶从 base 爬到 climb，直接跑上去
+                             台阶沿 +z（前进方向）铺开，和支撑面公式同一套口径：
+                             人在 worldZ 处踩到 base、在 worldZ+len 处正好等于车顶高度。
+                             base>0 就是从这节车厢爬到更高那节的接力楼梯。 */
+          const top = o.climb || 1.35;
+          const bot = o.base || 0;
+          const rise = top - bot;
+          const SL = o.len || 4.4;
+          const n = Math.max(4, Math.min(10, Math.round(SL / 0.62)));
+          const w = (o.hw || 1.02) * 2 * 0.94;
+          for (let i = 0; i < n; i++) {
+            const hh = bot + rise * (i + 1) / n;          // 这一级的台面高度
+            const dz = z + SL * (i + 0.5) / n;
+            const hgt = rise * (i + 1) / n;
+            R.box(x, bot + hgt / 2, dz, w, hgt, SL / n * 0.97, i % 2 ? '#8f959e' : '#7c828b', { flat: true });
+            R.box(x, hh - 0.035, dz, w * 0.94, 0.07, SL / n * 0.90, '#e0b23a', { unlit: true });  // 每级踏面前缘刷黄
+          }
+          /* 两侧扶手：跟着台阶一起升高。
+             注意别做成"一整块高墙"——之前用 top+1.04 的高度画，
+             2.25 米高的楼梯就变成一堵 3.3 米的墙，把后面的车厢整个挡没了。
+             现在是每级一根短立柱 + 一根贴着坡度的斜顶杆。 */
+          const railH = 0.86;
+          const tilt = -Math.atan2(rise, SL);            // 负角 = +z 端抬高，和 ramp 的 rx 同号
+          for (const s of [-1, 1]) {
+            const rx2 = x + s * ((o.hw || 1.02) + 0.04);
+            for (let i = 0; i < n; i++) {
+              const hh = bot + rise * (i + 1) / n;
+              const dz = z + SL * (i + 0.5) / n;
+              R.box(rx2, hh + railH * 0.5, dz, 0.08, railH, 0.08, '#5f666e', { flat: true });
+            }
+            R.box(rx2, bot + rise * 0.5 + railH + 0.04, z + SL * 0.5,
+              0.10, 0.10, Math.hypot(SL, rise), '#5f666e', { flat: true, rx: tilt });
+          }
+          /* 到顶那一下铺一块小平台，和车顶齐平，衔接不会"咯噔"一下 */
+          R.box(x, top - 0.04, z + SL + 0.16, w, 0.08, 0.36, '#8f959e', { flat: true });
+          break;
+        }
         default:
           R.box(x, 0.5, z, 1.6, 1.0, 0.4, '#cc6b4d', { flat: true });
       }

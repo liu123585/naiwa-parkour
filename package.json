@@ -8,6 +8,8 @@
     "test": "node tools/selftest.js",
     "test:api": "node tools/test-api.mjs",
     "test:collide": "node tools/test-collide.js",
+    "test:ui": "node tools/test-ui.js",
+    "test:bgm": "node tools/test-bgm.js",
     "deploy": "edgeone makers deploy"
   },
   "repository": {
