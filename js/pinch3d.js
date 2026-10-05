@@ -493,11 +493,17 @@ const Pinch3D = {
       R.scene.fog.near = 38;
       R.scene.fog.far = CFG.FAR * 0.92;
       R.renderer.setClearColor(fogCol, 1);
-      R.amb.intensity = 0.72 - night * 0.28;
-      R.hemi.intensity = 0.40 - night * 0.16;
-      R.key.intensity = 1.90 - night * 0.72;
+      /* 夜间照度：以前只降了 amb 0.28 / key 0.72，摊下来还剩白天七成亮度——
+         天已经黑成深蓝，道床和枕木却还是白天的白，昼夜完全对不上，
+         一眼就是"换了个天空贴图"的廉价感。现在总照度压到白天的一半左右，
+         环境光同时转冷（夜里没有暖太阳，只有冷天光）。
+         别压过头：障碍辨识全靠这点亮度，暗到看不清就是另一个 bug 了。 */
+      R.amb.intensity = 0.72 - night * 0.44;
+      R.hemi.intensity = 0.40 - night * 0.20;
+      R.key.intensity = 1.90 - night * 1.00;
       R.key.color.set(night > 0.5 ? 0xcfe0ff : 0xfff0d2);
-      R.fill.intensity = 0.55 + night * 0.22;
+      R.amb.color.set(night > 0.5 ? 0xbcd2ee : 0xfff1de);
+      R.fill.intensity = 0.55 + night * 0.14;
 
       const key = skyTopC.getHexString() + skyBotC.getHexString();
       if (R.skyKey !== key) {
@@ -1110,14 +1116,20 @@ const Pinch3D = {
         c.restore();
       }
 
-      /* 暖调 + 暗角 + 颗粒：整体往"台灯下拍出来的微缩模型"上靠一点。
-         三合一缓存图 + 单次 drawImage，掉帧时（fxLow）连颗粒一起省掉。 */
-      const ov = Pinch3D.overlay(th.night || 0, !Renderer.fxLow);
-      if (ov) {
-        c.save();
-        c.translate((Math.random() * 4 - 2) | 0, (Math.random() * 4 - 2) | 0);
-        c.drawImage(ov, 0, 0, W, H);
-        c.restore();
+      /* 暖调 + 夜间冷调 + 暗角：整体往"台灯下拍出来的微缩模型"上靠一点。
+         色调层和颗粒层分开画：色调层随昼夜变化要重建（但很便宜），
+         颗粒层几乎不重建。掉帧时（fxLow）连颗粒一起省掉。 */
+      const ov = Pinch3D.overlay(th.night || 0);
+      if (ov) c.drawImage(ov, 0, 0, W, H);
+      if (!Renderer.fxLow) {
+        const gr = Pinch3D.grain();
+        if (gr) {
+          /* 每帧随机偏移 ±2 像素：颗粒就有了手摇的抖动感 */
+          c.save();
+          c.translate((Math.random() * 4 - 2) | 0, (Math.random() * 4 - 2) | 0);
+          c.drawImage(gr, 0, 0, W, H);
+          c.restore();
+        }
       }
     },
   },
@@ -1156,12 +1168,15 @@ const Pinch3D = {
     return (memo[key] = '#' + c.getHexString());
   },
 
-  /* 后期叠层：暖调 + 暗角 + 胶片颗粒，三样合成一张缓存图。
-     原来每帧要三次全屏填充（其中一次是 pattern fill），手机上纯属白掉帧；
-     现在一次 drawImage 就画完。整张图每帧随机偏移 ±2 像素，颗粒就有了手摇的抖动感，
-     暗角偏移两像素肉眼看不出来。 */
-  overlay(night, withGrain) {
-    const key = (withGrain ? 'g' : 'n') + ((night || 0) * 20 | 0) + Renderer.W + 'x' + Renderer.H;
+  /* 后期叠层：暖调 + 夜间冷调 + 暗角，合成一张缓存图，一次 drawImage 画完。
+     以前这三样是每帧三次全屏填充（其中一次还是 pattern fill），手机上纯属白掉帧。
+     颗粒不在这里——见下面 grain()，它单独缓存。 */
+  overlay(night) {
+    /* 键要把各段隔开。写成 ((night*20)|0) + Renderer.W + 'x' + ... 的话，
+       `8 + 390` 会先走数值加法变成 398，键成了 "398x844" 而不是 "8390x844"——
+       凑巧还能当键用，但 night 档 8 配宽 390 跟 night 档 0 配宽 398 会撞车。
+       用 '|' 分隔就干净了。 */
+    const key = Renderer.W + 'x' + Renderer.H + '|' + ((night || 0) * 20 | 0);
     if (this._ovKey === key && this._ov) return this._ov;
     try {
       const W = Math.max(1, Math.round(Renderer.W / Renderer.dpr));
@@ -1171,26 +1186,54 @@ const Pinch3D = {
       const g2 = cv.getContext('2d');
       g2.fillStyle = 'rgba(255,198,128,' + (0.055 - (night || 0) * 0.02).toFixed(3) + ')';
       g2.fillRect(0, 0, W, H);
+      /* 夜里再压一层冷色。以前这一层只有暖调，夜色全靠灯撑，
+         道床和枕木还是白天的白——白天黑夜看着像同一张图换了个天空。
+         冷蓝压上去之后，暗部会统一往蓝里沉，跟天空接得上。 */
+      if (night > 0.02) {
+        g2.fillStyle = 'rgba(16,26,56,' + (night * 0.18).toFixed(3) + ')';
+        g2.fillRect(0, 0, W, H);
+      }
       const rg = g2.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.30, W / 2, H * 0.52, Math.max(W, H) * 0.80);
       rg.addColorStop(0, 'rgba(0,0,0,0)');
       rg.addColorStop(0.62, 'rgba(36,22,10,0.10)');
       rg.addColorStop(1, 'rgba(28,16,6,0.36)');
       g2.fillStyle = rg;
       g2.fillRect(0, 0, W, H);
-      if (withGrain) {
-        const n = (W * H) / 70;
-        for (let i = 0; i < n; i++) {
-          const v = Math.random();
-          g2.fillStyle = 'rgba(' + (v > 0.5 ? '255,255,255,' : '0,0,0,') + (0.03 + Math.random() * 0.07).toFixed(3) + ')';
-          g2.fillRect(Math.random() * W, Math.random() * H, 1.3, 1.3);
-        }
-      }
       this._ov = cv; this._ovKey = key;
       return cv;
     } catch (e) { return null; }
   },
 
-  /* 暗角：缓存的径向渐变，尺寸变了才重建 */
+  /* 胶片颗粒单独一张，跟色调层分开缓存。
+     以前颗粒是烤在 overlay() 里的，而 overlay 的键带着 night——
+     昼夜过渡时 night 会跨 20 个档，整张图就得重建 20 次，每次还要跑
+     约 (W*H/70) ≈ 4700 次 fillRect 画点。一次主题切换就是二十来下肉眼可见的
+     顿挫。拆开之后：颗粒只在尺寸变化时重建（几乎不发生），
+     色调层重建只剩一次纯色填充 + 一次径向渐变，便宜到可以忽略。
+     颗粒保留每帧随机偏移，手摇质感是这张图的意义所在。 */
+  grain() {
+    const W = Math.max(1, Math.round(Renderer.W / Renderer.dpr));
+    const H = Math.max(1, Math.round(Renderer.H / Renderer.dpr));
+    const key = W + 'x' + H;
+    if (this._grKey === key && this._gr) return this._gr;
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const g2 = cv.getContext('2d');
+      const n = (W * H) / 70;
+      for (let i = 0; i < n; i++) {
+        const v = Math.random();
+        g2.fillStyle = 'rgba(' + (v > 0.5 ? '255,255,255,' : '0,0,0,') + (0.03 + Math.random() * 0.07).toFixed(3) + ')';
+        g2.fillRect(Math.random() * W, Math.random() * H, 1.3, 1.3);
+      }
+      this._gr = cv; this._grKey = key;
+      return cv;
+    } catch (e) { return null; }
+  },
+
+  /* 暗角：缓存的径向渐变，尺寸变了才重建。
+     注意：暗角已经烤进 overlay() 了，这个函数目前没有调用点。
+     留着是给"想单独画暗角"的场合（比如菜单），但别误以为它在跑。 */
   vignette() {
     const c = Renderer.c;
     if (!c) return 'rgba(0,0,0,0)';
