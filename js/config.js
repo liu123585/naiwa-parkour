@@ -44,7 +44,15 @@ const CFG = {
   REVIVE_COST: 200,
   MAX_REVIVES: 1,
 
-  DPR_MAX: { high: 1.5, mid: 1.25, low: 0.95 },
+  /* 渲染分辨率上限（乘数，最终 dpr = min(这个值, 设备 dpr)）
+     ---------------------------------------------------------
+     老值是 { high: 1.5, mid: 1.25, low: 0.95 }，在手机上就是"糊"的元凶：
+     手机 dpr 普遍是 2~3，被 1.25 一压，渲染分辨率只剩屏幕的 40%~60%，
+     再被浏览器放大铺满全屏 —— 观感就是"打了一层马赛克"。
+     这里提到接近原生：中档 1.75 已经能覆盖绝大多数屏幕的清晰度需求，
+     剩下的性能开销交给 resScale / dprScale 两个动态旋钮去兜。
+     别为了省性能把这个值再往下调，糊是玩家第一眼就能看出来的问题。 */
+  DPR_MAX: { high: 2.0, mid: 1.75, low: 1.25 },
   EMOJI: false,
 };
 
@@ -311,7 +319,11 @@ const Store = {
     SKILLS.forEach(s => { if (typeof this.data.skills[s.id] !== 'number') this.data.skills[s.id] = 0; });
     this.data.settings = Object.assign({}, DEFAULT_SAVE.settings, this.data.settings || {});
     if (typeof this.data.boardCount !== 'number') this.data.boardCount = 3;
-    if (typeof this.data.difficulty !== 'string') this.data.difficulty = 'normal';
+    /* 难度选择已经从界面上拿掉了（用户要求点一下屏幕就直接开跑，
+       不要在开局前拦一道选择），所以这里不再保留玩家选过的档位——
+       老存档里存着 'easy' / 'hard' 的一并归正到 normal。
+       否则会出现"界面上没得选、实际却跑在困难难度"这种鬼状态。 */
+    this.data.difficulty = 'normal';
     if (typeof this.data.map !== 'string') this.data.map = 'city';
     ['mapsUnlocked', 'codexSeen', 'challenges'].forEach(k => {
       if (!Array.isArray(this.data[k])) this.data[k] = DEFAULT_SAVE[k].slice();

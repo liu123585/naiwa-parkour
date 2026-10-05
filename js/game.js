@@ -137,12 +137,17 @@ const Game = {
        同样必须两头都能走：旧版只有降档分支，dprStep 一旦加过就再也回不去，
        设备启动时抖一下，之后整局都是糊的。回升要求"明显高于阈值"（>56fps）
        并持续 180 帧，迟滞拉够，免得在 52fps 上下反复 resize。 */
-    if (f.avg < 52) {
+    /* 降档阈值从 52fps 放到 46fps：52 太高了，很多手机稳定在 50fps 左右，
+       本来玩着不卡，却被判成"性能不足"降到糊画质 —— 用户感知到的就是
+       "明明挺流畅，画面却像打了马赛克"。
+       两档降幅也从 0.84/0.68 收到 0.90/0.82：0.68 太狠，
+       而且它和 pinch3d 的 resScale 是相乘关系，两个一起降会糊到没法看。 */
+    if (f.avg < 46) {
       f.goodFrames = 0;
       f.lowFrames++;
       if (f.lowFrames > 50 && f.dprStep < 2) {
         f.dprStep++;
-        Renderer.dprScale = f.dprStep === 1 ? 0.84 : 0.68;
+        Renderer.dprScale = f.dprStep === 1 ? 0.90 : 0.82;
         if (f.dprStep >= 2) Renderer.fxLow = true;
         Renderer.resize(); f.lowFrames = 0;
       }
@@ -152,7 +157,7 @@ const Game = {
         f.goodFrames = (f.goodFrames || 0) + 1;
         if (f.goodFrames > 180 && f.dprStep > 0) {
           f.dprStep--;
-          Renderer.dprScale = f.dprStep === 0 ? 1 : 0.84;
+          Renderer.dprScale = f.dprStep === 0 ? 1 : 0.90;
           if (f.dprStep < 2) Renderer.fxLow = false;
           Renderer.resize(); f.goodFrames = 0;
         }
@@ -833,7 +838,10 @@ const Game = {
   /* ================= 关卡生成 ================= */
   genNext() {
     const z = this.nextZ;
-    const d = Utils.clamp(this.travel / 2600, 0, 1);
+    /* 难度曲线从 2600 米收到 1900 米。老曲线太慢：跑了一分多钟，
+       地图还是"一段障碍 + 一段空"的节奏，玩家根本感觉不到在变难。
+       提前把复杂段落放出来，才有"越跑越吃紧"的体感。 */
+    const d = Utils.clamp(this.travel / 1900, 0, 1);
     const r = Math.random();
     const G = Gen;
     G.z = z;
@@ -845,7 +853,9 @@ const Game = {
       Gen.pickPattern(d);
       guard++;
     } while (this.objs.length === before && guard < 6);   // 保证每段都产出东西
-    this.nextZ = G.z + Utils.rand(4, 12);
+    /* 段落间距随难度收一点：早期松、后期紧，给玩家喘气的时间越来越少。
+       但保底 4 米 —— 再小两个段落就会叠在一起，变成没得选的必死局。 */
+    this.nextZ = G.z + Utils.rand(4, 12 - d * 3);
   },
 
   addCoin(worldZ, x, y) {
@@ -979,9 +989,16 @@ const Gen = {
       if (Math.random() < 0.6) Game.addObstacle('barrier', (lane + 1) % 3, { worldZ: G.z + 4 });
       G.z += n * 3.2 + 8;
     } },
-    { id: 'oncoming', w: () => Gen.diffGuess > 0.12 ? 10 : 0, fn: (G) => {
+    /* 迎面列车：从远处朝玩家冲过来，必须提前变道。
+       老版门槛是 diffGuess > 0.12（要跑够约 312 米才开始出现）、权重只有 10，
+       结果很多玩家整局都没见过一次"火车朝我开来"——
+       反馈里那句"对面的火车为啥不会朝我驶来"就是这么来的。
+       现在门槛压到 0.03（约 78 米就能遇到）、权重提到 15，让它变成常规戏码；
+       生成距离从 105 拉到 120 米、迎面速度从 19~31 降到 17~27，
+       把反应窗口从最紧的 1.3 秒放宽到 1.8 秒左右 —— 有压迫感，但不冤死。 */
+    { id: 'oncoming', w: () => Gen.diffGuess > 0.03 ? 15 : 0, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      const t = Game.addTrain(G.z + 105, lane, 22, 3.3, { vz: 19 + 12 * Gen.diffGuess, headlight: true });
+      const t = Game.addTrain(G.z + 120, lane, 22, 3.3, { vz: 17 + 10 * Gen.diffGuess, headlight: true });
       t.oncoming = true;
       UI.warn('⚠ ' + (lane === 0 ? '左侧' : lane === 1 ? '中间' : '右侧') + '车道有列车驶来！');
       Sound.deny();
@@ -1054,6 +1071,37 @@ const Gen = {
       const free = [0, 1, 2].filter((l) => l !== a && l !== b)[0];
       for (let i = 0; i < 5; i++) Game.addCoin(G.z + i * 2.1, G.laneX(free), 0.85);
       G.z += 14;
+    } },
+    /* 连续错位：三段障碍各自换一条道，逼玩家"左→右→左"连着甩。
+       单个障碍都能站桩躲过去，连着来三下才真正考验随机应变 ——
+       反馈里"地图随机程度不强、需要更复杂"指的就是缺这种段落。 */
+    { id: 'zigzag', w: () => 4 + Gen.diffGuess * 9, fn: (G) => {
+      let prev = Utils.irand(0, 2);
+      const segs = 3;
+      for (let i = 0; i < segs; i++) {
+        let l = Utils.irand(0, 2);
+        while (l === prev) l = Utils.irand(0, 2);          // 每段都必须换道
+        Game.addObstacle(Utils.pick(['barrier', 'cone', 'turnstile']), l, { worldZ: G.z + i * 7.5 });
+        for (let c = 0; c < 3; c++) Game.addCoin(G.z + i * 7.5 + c * 1.7, G.laneX(prev), 0.85);
+        prev = l;
+      }
+      G.z += segs * 7.5 + 10;
+    } },
+    /* 交替封锁：两条道轮流被长条车体堵死，只留一条缝，玩家得一路切过去。
+       和 zigzag 的区别是用"长封锁"代替"点障碍"，走位容错更小。 */
+    { id: 'slalom', w: () => 3 + Gen.diffGuess * 8, fn: (G) => {
+      let free = Utils.irand(0, 2);
+      const segs = 2 + (Math.random() < 0.5 ? 1 : 0);
+      for (let i = 0; i < segs; i++) {
+        for (let l = 0; l < 3; l++) {
+          if (l === free) continue;
+          if (Math.random() < 0.22) continue;              // 留点变数，别每次封满
+          Game.addTrain(G.z + i * 13, l, 9, 3.3);
+        }
+        for (let c = 0; c < 4; c++) Game.addCoin(G.z + i * 13 + c * 1.9, G.laneX(free), 0.85);
+        free = (free + (Math.random() < 0.5 ? 1 : 2)) % 3; // 缝换到另一条道
+      }
+      G.z += segs * 13 + 10;
     } },
     /* 纯装饰：信号灯 / 水洼 / 龙门架，路过即可点亮图鉴，不阻挡 */
     { id: 'decor', w: () => 5, fn: (G) => {

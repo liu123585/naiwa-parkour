@@ -77,7 +77,11 @@ const Pinch3D = {
     if (typeof THREE === 'undefined') { this.ready = false; return false; }
     try {
       this.renderer = new THREE.WebGLRenderer({
-        canvas: canvas, antialias: false, alpha: false,
+        /* antialias 开着。老版为了省性能关了，代价是所有的箱体边缘全是锯齿，
+           本来就偏低的分辨率再叠一层锯齿，观感就是"马赛克"。
+           DPR_MAX 提上去之后，MSAA 的开销相对可接受，而且它买到的是
+           最显眼的观感提升，这笔账划算。 */
+        canvas: canvas, antialias: true, alpha: false,
         powerPreference: 'high-performance', stencil: false,
       });
     } catch (e) {
@@ -225,18 +229,21 @@ const Pinch3D = {
   },
 
   /* 纸纹颗粒：给大面积纯色块铺一层细碎杂色。
-     没有它，道床/墙面/楼房就是三块干净的平色，一眼"批量生成的 CG"。 */
+     没有它，道床/墙面/楼房就是三块干净的平色，一眼"批量生成的 CG"。
+     但强度要克制：颗粒太密太黑，在低分辨率下会被眼睛读成"压缩噪点"，
+     整张画面显得脏、显得糊 —— 那正是"马赛克感"的一部分来源。
+     所以点数从 1100 收到 750，不透明度也压掉三成，质感还在，脏感没了。 */
   get grainTex() {
     if (this._grainT) return this._grainT;
     const t = this.tex(this.mkCanvas(96, 96, (c, w, h) => {
       c.fillStyle = '#ffffff'; c.fillRect(0, 0, w, h);
-      for (let i = 0; i < 1100; i++) {
-        const a = 0.04 + Math.random() * 0.12;
+      for (let i = 0; i < 750; i++) {
+        const a = 0.03 + Math.random() * 0.085;
         c.fillStyle = (i % 3 ? 'rgba(0,0,0,' : 'rgba(255,255,255,') + a.toFixed(3) + ')';
-        c.fillRect(Math.random() * w, Math.random() * h, 0.6 + Math.random() * 1.7, 0.6 + Math.random() * 1.7);
+        c.fillRect(Math.random() * w, Math.random() * h, 0.6 + Math.random() * 1.5, 0.6 + Math.random() * 1.5);
       }
-      for (let i = 0; i < 14; i++) {          // 几道纸纤维
-        c.strokeStyle = 'rgba(0,0,0,.045)'; c.lineWidth = 0.7;
+      for (let i = 0; i < 10; i++) {          // 几道纸纤维
+        c.strokeStyle = 'rgba(0,0,0,.035)'; c.lineWidth = 0.7;
         const y = Math.random() * h;
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y + (Math.random() - 0.5) * 5); c.stroke();
       }
@@ -417,8 +424,16 @@ const Pinch3D = {
 
       const c2 = Renderer.c;
       if (c2) {
+        /* ⚠️ setTransform 之后逻辑坐标系就等于 CSS 像素坐标系，
+           所以这里必须用 Renderer.W / Renderer.H，**不能**再除以 dpr。
+           原来写的是 Renderer.W / Renderer.dpr —— 那只会清掉 1/dpr 的宽度：
+           dpr=1.25 时清 80%，dpr=1.75 时只剩 57%，
+           右半边留着上一帧的旧天空不透明像素，把 3D 层整个盖住，
+           表现就是"画面只有左半边是 3D，右半边是一块死色"。
+           这个 bug 在 dpr=1 时完全看不出来，所以一直潜伏着；
+           把 DPR_MAX 提上去之后才炸出来。 */
         c2.setTransform(Renderer.dpr, 0, 0, Renderer.dpr, 0, 0);
-        c2.clearRect(0, 0, Renderer.W / Renderer.dpr, Renderer.H / Renderer.dpr);
+        c2.clearRect(0, 0, Renderer.W, Renderer.H);
         c2.globalAlpha = 1;
       }
 
@@ -987,6 +1002,16 @@ const Pinch3D = {
       const m = R.take(R.g.disc, mat);
       R.put(m, o.x, o.y, R.wz(o.z), 0.58, 0.58, 0.10);
       m.rotation.set(0, o.spin || 0, 0);
+
+      /* 地面投影 —— 金币"有多高"全靠它读出来。
+         以前没有这层影子，一串悬空金币在屏幕上就是几个圆片排成一条直线，
+         玩家分不清哪枚高哪枚低，自然也就不知道该在哪一枚起跳 ——
+         反馈里"金币在上面我看不出来要跳"说的就是这件事。
+         离地越高 → 影子越小越淡，这是最符合直觉的深度线索。 */
+      const gy = o.y || 0.85;
+      const hk = Math.max(0, Math.min(1, (gy - 0.6) / 2.2));   // 0 = 贴地，1 = 最高
+      const sc = 1 - hk * 0.42;
+      R.flatShadow(o.x, R.wz(o.z) + 0.04, 1.0 * sc, 0.60 * sc, 0.30 - hk * 0.17);
     },
 
     /* ---- 道具：每种道具一个专属造型，方便一眼认出来 ---- */
@@ -1086,7 +1111,7 @@ const Pinch3D = {
     drawWeather(th, time, speedRatio) {
       const c = Renderer.c;
       if (!c) return;
-      const W = Renderer.W / Renderer.dpr, H = Renderer.H / Renderer.dpr;
+      const W = Renderer.W, H = Renderer.H;
       if (th.rain > 0.05) {
         c.save();
         c.strokeStyle = 'rgba(190,215,240,.5)'; c.lineWidth = 1.2;
@@ -1179,8 +1204,8 @@ const Pinch3D = {
     const key = Renderer.W + 'x' + Renderer.H + '|' + ((night || 0) * 20 | 0);
     if (this._ovKey === key && this._ov) return this._ov;
     try {
-      const W = Math.max(1, Math.round(Renderer.W / Renderer.dpr));
-      const H = Math.max(1, Math.round(Renderer.H / Renderer.dpr));
+      const W = Math.max(1, Math.round(Renderer.W));
+      const H = Math.max(1, Math.round(Renderer.H));
       const cv = document.createElement('canvas');
       cv.width = W; cv.height = H;
       const g2 = cv.getContext('2d');
@@ -1193,10 +1218,15 @@ const Pinch3D = {
         g2.fillStyle = 'rgba(16,26,56,' + (night * 0.18).toFixed(3) + ')';
         g2.fillRect(0, 0, W, H);
       }
+      /* 暗角。
+         ⚠️ 这层在修掉 W/dpr 那个 bug 之前只覆盖左半边，修好之后整屏生效，
+         观感一下子暗了不少（边缘原本只压左半屏，现在是整圈）——
+         所以强度要跟着回调：边缘从 0.36 收到 0.26，否则画面会发闷。
+         暗角的作用是把视线收拢到中间，不是把画面压黑。 */
       const rg = g2.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.30, W / 2, H * 0.52, Math.max(W, H) * 0.80);
       rg.addColorStop(0, 'rgba(0,0,0,0)');
-      rg.addColorStop(0.62, 'rgba(36,22,10,0.10)');
-      rg.addColorStop(1, 'rgba(28,16,6,0.36)');
+      rg.addColorStop(0.62, 'rgba(36,22,10,0.065)');
+      rg.addColorStop(1, 'rgba(28,16,6,0.26)');
       g2.fillStyle = rg;
       g2.fillRect(0, 0, W, H);
       this._ov = cv; this._ovKey = key;
@@ -1212,19 +1242,23 @@ const Pinch3D = {
      色调层重建只剩一次纯色填充 + 一次径向渐变，便宜到可以忽略。
      颗粒保留每帧随机偏移，手摇质感是这张图的意义所在。 */
   grain() {
-    const W = Math.max(1, Math.round(Renderer.W / Renderer.dpr));
-    const H = Math.max(1, Math.round(Renderer.H / Renderer.dpr));
+    const W = Math.max(1, Math.round(Renderer.W));
+    const H = Math.max(1, Math.round(Renderer.H));
     const key = W + 'x' + H;
     if (this._grKey === key && this._gr) return this._gr;
     try {
       const cv = document.createElement('canvas');
       cv.width = W; cv.height = H;
       const g2 = cv.getContext('2d');
-      const n = (W * H) / 70;
+      /* 密度从 /70 放到 /140、不透明度砍半。
+         这层是铺满整屏的随机噪点，密到一定程度就不是"胶片颗粒"，
+         而是"视频压缩块"——玩家会直接描述成"画面糊了、有马赛克"。
+         留一点点就够压住色带，多了纯粹是负分。 */
+      const n = (W * H) / 140;
       for (let i = 0; i < n; i++) {
         const v = Math.random();
-        g2.fillStyle = 'rgba(' + (v > 0.5 ? '255,255,255,' : '0,0,0,') + (0.03 + Math.random() * 0.07).toFixed(3) + ')';
-        g2.fillRect(Math.random() * W, Math.random() * H, 1.3, 1.3);
+        g2.fillStyle = 'rgba(' + (v > 0.5 ? '255,255,255,' : '0,0,0,') + (0.018 + Math.random() * 0.038).toFixed(3) + ')';
+        g2.fillRect(Math.random() * W, Math.random() * H, 1.2, 1.2);
       }
       this._gr = cv; this._grKey = key;
       return cv;
@@ -1237,7 +1271,7 @@ const Pinch3D = {
   vignette() {
     const c = Renderer.c;
     if (!c) return 'rgba(0,0,0,0)';
-    const W = Renderer.W / Renderer.dpr, H = Renderer.H / Renderer.dpr;
+    const W = Renderer.W, H = Renderer.H;
     if (this._vig && this._vig.w === W && this._vig.h === H) return this._vig.g;
     const g = c.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.30, W / 2, H * 0.52, Math.max(W, H) * 0.80);
     g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -1268,7 +1302,12 @@ const Pinch3D = {
     const worst = this._worst || avg;
     this._ft = 0; this._fn = 0; this._worst = 0;
 
-    const STEP = 0.09, LO = 0.62, HI = 1.0;
+    /* LO 从 0.62 提到 0.86。
+       0.62 是"糊到不能看"的程度：它和 game.js 的 dprScale 是两个各降各的旋钮，
+       两个一起降的时候是相乘的（0.68 × 0.62 ≈ 0.42），
+       叠上本来就偏低的 DPR_MAX，最终分辨率只剩屏幕的一半不到 —— 就是马赛克。
+       宁可少省这一点性能，也不能把画面糊掉。 */
+    const STEP = 0.05, LO = 0.86, HI = 1.0;
     let rs = this.resScale || 1;
 
     if (worst > 0.048 || avg > 0.026) {

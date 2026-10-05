@@ -8,7 +8,7 @@ const Panels = {
   init() {
     const q = (id) => document.getElementById(id);
     this.el = {
-      diffPick: q('diffPick'), modePick: q('modePick'), menuNow: q('menuNow'),
+      modePick: q('modePick'), menuNow: q('menuNow'),
       mapsBody: q('mapsBody'), mapsCoins: q('mapsCoins'),
       codexBody: q('codexBody'), codexCount: q('codexCount'),
       pathBody: q('pathBody'), pathCoins: q('pathCoins'),
@@ -17,7 +17,6 @@ const Panels = {
     };
     this.outfitSkin = Store.data.char || (typeof DEFAULT_SKIN !== 'undefined' ? DEFAULT_SKIN : 'ni');
     this.buildModePick();
-    this.buildDiffPick();
     this.refreshMenuNow();
     this.bindNav();
   },
@@ -54,26 +53,9 @@ const Panels = {
     if (which === 'join') this.buildJoin();
   },
 
-  /* ---------------- 菜单：难度与当前地图 ---------------- */
-  buildDiffPick() {
-    const box = this.el.diffPick;
-    if (!box) return;
-    box.innerHTML = '';
-    DIFFICULTIES.forEach(d => {
-      const b = document.createElement('button');
-      b.className = 'diff-btn' + (Store.data.difficulty === d.id ? ' active' : '');
-      b.innerHTML = d.name + '<small>' + d.tag + '</small>';
-      b.addEventListener('click', () => {
-        Store.data.difficulty = d.id;
-        Store.save();
-        Sound.click();
-        this.buildDiffPick();
-        this.refreshMenuNow();
-        UI.toast('难度：' + d.name + '　' + d.desc);
-      });
-      box.appendChild(b);
-    });
-  },
+  /* ---------------- 菜单：模式与当前地图 ----------------
+     难度选择已经拿掉了（用户要求"点一下屏幕就直接开始"，不要在开局前
+     拦一道选择）。难度固定走 normal，见 config.js 里 Store 的归正逻辑。 */
   buildModePick() {
     const box = this.el.modePick;
     if (!box) return;

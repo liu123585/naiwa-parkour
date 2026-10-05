@@ -120,8 +120,8 @@ const UI = {
     this.hideAllScreens();
     this.el.hud.classList.add('hidden');
     this.el.menu.classList.remove('hidden');
-    if (typeof Panels !== 'undefined' && Panels.el.diffPick) {
-      Panels.buildDiffPick();
+    if (typeof Panels !== 'undefined' && Panels.el.modePick) {
+      Panels.buildModePick();
       Panels.refreshMenuNow();
     }
     this.refreshCoins();
