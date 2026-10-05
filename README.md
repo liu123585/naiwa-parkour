@@ -47,6 +47,45 @@ mv ../.naiwa-shots-hold shots                    # 3. 挪回来
 **别只看退出码**，用 `curl` 打线上端点看实际响应才算数
 （比如 `/api/rank` 的返回里带 `howto` 字段就说明是新版）。
 
+### 自定义域名（短链）
+
+默认域名 `naiwa-parkour-xunozih0.edgeone.cool` 太长，绑了用户自己的子域名：
+
+> **https://run.liuyushan.top** （正式地址）
+
+（`liuyushan.top` 已在腾讯云完成 ICP 备案，国内可走大陆节点。
+⚠️ 用户明确**不要用根域 `liuyushan.top`**——根域留着做别的，这个项目只占 `run` 子域。）
+
+⚠️ **绑域名只能在控制台做，CLI 没有这个能力**——排查过：`edgeone makers` 没有 domain
+子命令，`edgeone.schema.json` 里也没有 domain 字段，CLI 包里只有 `DescribePagesZones`
+（那是 AI Gateway 的接口）。配置式绑定这条路走不通。
+
+步骤：控制台 → 项目详情 → **域名管理** → 添加自定义域名 → 填 `run.liuyushan.top`
+→ 按弹窗在**阿里云云解析**加记录 → 证书自动签发。
+
+域名现状（2026-10-05 实测）：
+- NS 是 `dns23.hichina.com`，所以加记录要去**阿里云云解析**，不是 DNSPod。
+- `site.liuyushan.top` 已占用（河科大新生指南站）；`download.liuyushan.top` 已占用（闪星勇者安装包）。
+- 根域 `@` 和 `www` 各有一条废弃 A 记录 → `82.156.57.227`（端口能连但不应答 HTTP），
+  绑子域不用管它。
+
+⚠️ 阿里云冲突规则有个**反直觉**的点：根域 `@` 上 CNAME 与 TXT 不冲突，
+但**非根域（子域）上 CNAME 与 TXT 冲突**（RFC 规定 CNAME 不能与其他记录共存）。
+我原先担心 EdgeOne 会在 `run` 子域上要一条同名的 TXT 归属权验证记录、于是卡住——
+**实测不会**：EdgeOne 只让你加**一条 CNAME**，验证跟着 CNAME 走，没有 TXT 记录。
+这条担心作废，记在这儿免得下次再绕一遍。
+
+实测结果（2026-10-05）：
+
+    run.liuyushan.top → run.liuyushan.top.pages.dnsoe6.com → 43.174.247.110 / 43.174.246.110
+
+证书自动签发：`CN=run.liuyushan.top`，签发者 TrustAsia，有效期 2026-10-05 ~ 2027-01-02。
+
+⚠️ **本机 curl 打不通这个域名**（走代理时 TLS 在 ALPN 后就断，退出码 35），
+但**浏览器打得通**。要验证域名是否真的活着，别用 curl，用 `tools/shot.js` 跑一次无头浏览器。
+
+代码侧不用改：全项目没有任何写死的域名，接口和分享都用相对路径 / `location`。
+
 ## 后端
 
 线上跑 **EdgeOne Pages 边缘函数 + KV 命名空间**，两个端点：
@@ -73,8 +112,22 @@ mv ../.naiwa-shots-hold shots                    # 3. 挪回来
    **变量名一定填 `KV`**（大小写敏感，代码里按这个名字取）。
 3. 重新部署一次：`PAGES_SOURCE=skills edgeone makers deploy`。
 
-验证：打开 `https://naiwa-parkour-xunozih0.edgeone.cool/api/rank?diff=normal`
+验证：打开 `https://run.liuyushan.top/api/rank?diff=normal`
 应该返回 `{"ok":true,"list":[...],"total":N}` 而不再是 `KV 未绑定`。
+
+**实测（2026-10-05，命名空间 `run_game`、变量名 `KV`）**，四项都过：
+
+| 用例 | 结果 |
+| --- | --- |
+| `GET /api/rank?diff=normal` | `{"ok":true,"list":[],"total":0}` —— 不再是「KV 未绑定」 |
+| `POST /api/save` 建一份档，再 `GET` 读回 | 拿到码 `W2Y83N`，字段原样返回 |
+| `POST /api/rank` 同名连传两次（4321 → 9999） | `total` 始终 1、玩家码不变 —— 同名合并生效，没重复插入 |
+| `GET /api/save?code=ZZZZZZ` | `没找到这个存档码`（404 语义正确） |
+
+⚠️ **验证完记得清掉测试数据**——榜单是玩家能看见的，留一条「KV自检 9999 分」很难看。
+KV 没有 HTTP 层的删除接口，`edgeone` CLI 也没有 KV 子命令（只有 init/dev/deploy/link/claim/create），
+所以清理得临时部署一个带 token 的一次性端点、调完立刻删掉重部署。
+（KV API 本身有 `delete(key)` 和 `list({prefix,limit,cursor})`，注意 key 只允许字母数字下划线。）
 
 本地 `node tools/serve.js` 只服务静态文件，没有边缘函数运行时，
 所以本地面板里云端那块会显示"连不上"——这是正常的，不影响单机玩。
