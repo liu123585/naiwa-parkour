@@ -95,7 +95,14 @@ const Pinch3D = {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0xb98d64, 38, CFG.FAR * 0.92);
 
-    this.camera = new THREE.PerspectiveCamera(CFG.FOV_Y || 62, 1, 0.28, 320);
+    /* 近裁剪面从 0.28 提到 0.9。
+       0.28 太小：玩家跳过车厢、或者变道擦着车厢过去的时候，相机（挂在角色
+       后方 9.6 米）会正好贴上车厢的外壁，整面墙铺满屏幕 —— 跑酷游戏里这
+       半秒等于瞎了，反馈里"突然糊一片"说的就是这个。
+       提到 0.9 之后，贴脸 0.9 米以内的面直接被裁掉；而真正需要看清的东西
+       全都远得多（最近可见地面距相机 6.07 米、角色距相机 9.88 米），
+       一点不误伤。顺带近平面变大还会让深度精度更好。 */
+    this.camera = new THREE.PerspectiveCamera(CFG.FOV_Y || 62, 1, 0.9, 320);
     this.camTarget = new THREE.Vector3();
     /* 打开 layer 1：角色描边 mesh 都挂在这一层，关掉这一层就能整批省掉描边。 */
     this.camera.layers.enable(1);
@@ -580,11 +587,14 @@ const Pinch3D = {
       }
       const skyTopC = sc.top, skyBotC = sc.bot, fogCol = sc.fog;
       R.scene.fog.color.copy(fogCol);
-      /* 雾的近端从 24 推到 38。24 是贴着相机的——相机在 camZ，接触网支架在
-         camZ+14，也就二十来米，等于整个中景一进来就吃雾，远景近景全糊成
-         同一个灰米色，画面毫无纵深。推远之后近处恢复对比，远处照样化开。 */
-      R.scene.fog.near = 38;
-      R.scene.fog.far = CFG.FAR * 0.92;
+      /* 雾的近端从 24 推到 38，再推到 52。24 是贴着相机的——相机在 camZ，
+         接触网支架在 camZ+14，也就二十来米，等于整个中景一进来就吃雾，
+         远景近景全糊成同一个灰米色，画面毫无纵深。38 还是偏近：跑起来
+         四十米开外就开始发白，整条轨道像蒙了层纱。
+         远端放到正好 FAR：物体最远在 190 米处登场，那里 fog 系数刚好是 1，
+         也就是"从雾里浮现"而不是"凭空跳出来"，遮丑的作用一点没丢。 */
+      R.scene.fog.near = 52;
+      R.scene.fog.far = CFG.FAR;
       R.renderer.setClearColor(fogCol, 1);
       /* 夜间照度：以前只降了 amb 0.28 / key 0.72，摊下来还剩白天七成亮度——
          天已经黑成深蓝，道床和枕木却还是白天的白，昼夜完全对不上，
@@ -662,9 +672,20 @@ const Pinch3D = {
       const R = Pinch3D;
       const camZ = travel - CFG.CAM_BACK;
       const FARZ = Math.max(180, CFG.FAR * 1.15);
+      /* ---- 贴地长条一律从相机前方起步（踩过的坑，别改回去） ----
+         桌面 / 道床 / 铁轨 / 侧墙 / 草地都是"跟着相机无限延伸"的长条，
+         以前一律按"中心 = camZ + 长度×0.45"摆，结果近端顶点正好落在
+         相机平面甚至相机后方。透视投影一旦遇到 w≈0 或 w<0 的顶点就会
+         把它镜像翻转到屏幕另一侧，画面上立刻出现几十条从消失点射向
+         天空的白线 —— 轨面反光（#d3dce6）和侧墙压条（#e3c79c）都是
+         浅色，最扎眼，之前一直以为是"粒子没裁剪"。
+         相机俯角 atan((4.05-0.62)/18)≈10.8°、竖半视角 31°，视野下边缘
+         打在 y≈0 的地面上是 camZ + 4.55；所以统一从 camZ + 2 起头，
+         起点稳稳落在画面之外，又不会在玩家脚下露馅。 */
+      const GZ0 = camZ + 2;
 
       /* ---- 桌面：一整块绿色切割垫（接影子，但自己不出影子） ---- */
-      R.box(0, -0.62, camZ + FARZ * 0.45, 130, 1.2, FARZ * 1.15, CRAFT.mat, { flat: true, noCast: true, recv: true });
+      R.box(0, -0.62, GZ0 + FARZ * 0.575, 130, 1.2, FARZ * 1.15, CRAFT.mat, { flat: true, noCast: true, recv: true });
       /* 垫子上的分格线：几根长条就够，多了远处会糊成一片 */
       for (let i = 0; i < 6; i++) {
         const lz = camZ + 6 + i * 19 + (travel % 19);
@@ -680,7 +701,7 @@ const Pinch3D = {
       const wallTopCol = th.wallTop || CRAFT.wallTop;
       /* 道床压暗一档：它占了下半屏六成面积，跟枕木一个亮度的话整片地就是
          一块平板，看不出轨道在哪。 */
-      R.box(0, -0.16, camZ + FARZ * 0.42, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, R.dark(bedCol, 0.86),
+      R.box(0, -0.16, GZ0 + FARZ * 0.475, CFG.WALL_X * 2 + 0.6, 0.34, FARZ * 0.95, R.dark(bedCol, 0.86),
         { flat: true, noCast: true, recv: true, tex: R.grainTex });
 
       /* ---- 枕木：一根根冰棍棒，比道床浅一档，保证看得见 ----
@@ -708,8 +729,8 @@ const Pinch3D = {
         const lx = Utils.laneX(ln);
         for (const s of [-1, 1]) {
           const rx = lx + s * CFG.RAIL_HALF;
-          R.box(rx, 0.19, camZ + FARZ * 0.45, 0.14, 0.16, FARZ * 0.9, CRAFT.rail, { flat: true, noCast: true, recv: true });
-          R.box(rx, 0.268, camZ + FARZ * 0.45, 0.11, 0.034, FARZ * 0.9, CRAFT.railTop, { flat: true, noCast: true, recv: true });
+          R.box(rx, 0.19, GZ0 + FARZ * 0.45, 0.14, 0.16, FARZ * 0.9, CRAFT.rail, { flat: true, noCast: true, recv: true });
+          R.box(rx, 0.268, GZ0 + FARZ * 0.45, 0.11, 0.034, FARZ * 0.9, CRAFT.railTop, { flat: true, noCast: true, recv: true });
         }
       }
 
@@ -721,20 +742,23 @@ const Pinch3D = {
           if (z > camZ + CFG.FAR * 0.72) break;
           const cx = sgn * CFG.WALL_X;
           const idx = i + Math.floor(travel / SEGL);
+          /* 段从 z 起、往 +z 铺。以前是"中心 = z - SEGL/2"，也就是往 -z 铺，
+             第一段直接压到相机后头去了，两侧共 32 条浅米色压条会一起炸成斜线。 */
+          const zc = z + SEGL / 2;
           /* 墙体 */
-          R.box(cx, 0.62, z - SEGL / 2, 0.16, 1.24, SEGL, wallCol, { flat: true, tex: R.grainTex });
+          R.box(cx, 0.62, zc, 0.16, 1.24, SEGL, wallCol, { flat: true, tex: R.grainTex });
           /* 顶边压条 */
-          R.box(cx, 1.30, z - SEGL / 2, 0.52, 0.19, SEGL, wallTopCol, { flat: true });
+          R.box(cx, 1.30, zc, 0.52, 0.19, SEGL, wallTopCol, { flat: true });
           /* 两块纸板接缝 */
-          R.box(cx - sgn * 0.09, 0.62, z - SEGL / 2, 0.02, 1.22, 0.07, R.dark(wallCol, 0.70), { unlit: true });
+          R.box(cx - sgn * 0.09, 0.62, zc, 0.02, 1.22, 0.07, R.dark(wallCol, 0.70), { unlit: true });
           /* 偶尔来一截封箱胶带 */
           if (idx % 3 === 1) {
-            R.box(cx - sgn * 0.09, 1.00, z - SEGL / 2 + 2.6, 0.02, 0.32, 1.7, CRAFT.tape, { unlit: true });
+            R.box(cx - sgn * 0.09, 1.00, zc + 2.6, 0.02, 0.32, 1.7, CRAFT.tape, { unlit: true });
           }
           /* 偶尔贴张手写标签 */
           if (idx % 5 === 2) {
-            R.box(cx - sgn * 0.09, 0.56, z - SEGL / 2 + 4.2, 0.02, 0.36, 1.1, '#f5efdd', { unlit: true });
-            R.box(cx - sgn * 0.10, 0.56, z - SEGL / 2 + 4.2, 0.01, 0.16, 0.70, '#b9ab8e', { unlit: true });
+            R.box(cx - sgn * 0.09, 0.56, zc + 4.2, 0.02, 0.36, 1.1, '#f5efdd', { unlit: true });
+            R.box(cx - sgn * 0.10, 0.56, zc + 4.2, 0.01, 0.16, 0.70, '#b9ab8e', { unlit: true });
           }
         }
       }
@@ -771,13 +795,17 @@ const Pinch3D = {
       };
 
       for (const sgn of [-1, 1]) {
-        /* 桌面延伸出去的草地 + 人行道 */
-        R.box(sgn * (CFG.WALL_X + 2.0), 0.05, camZ + FARZ * 0.45, 4.2, 0.14, FARZ * 0.95, CRAFT.grass, { flat: true, noCast: true, recv: true });
-        R.box(sgn * (CFG.WALL_X + 4.9), 0.06, camZ + FARZ * 0.45, 1.7, 0.16, FARZ * 0.95, CRAFT.path, { flat: true, noCast: true, recv: true });
+        /* 桌面延伸出去的草地 + 人行道。同样从相机前方 2 米起头（见 drawGround 里 GZ0 的说明），
+           这两条各 150 米长，跨过相机平面照样会炸成斜线。 */
+        R.box(sgn * (CFG.WALL_X + 2.0), 0.05, camZ + 2 + FARZ * 0.475, 4.2, 0.14, FARZ * 0.95, CRAFT.grass, { flat: true, noCast: true, recv: true });
+        R.box(sgn * (CFG.WALL_X + 4.9), 0.06, camZ + 2 + FARZ * 0.475, 1.7, 0.16, FARZ * 0.95, CRAFT.path, { flat: true, noCast: true, recv: true });
 
         const base = Math.floor(travel / STEP) * STEP;
         for (let i = 0; i < n; i++) {
-          const z = camZ + 4 + i * STEP + (travel % STEP);
+          /* 起点从 camZ+4 推到 camZ+10：最宽 9 米的楼近端在 z - 3.7 处，
+             从 camZ+4 起头的话近端会落到 camZ+0.3 —— 离相机 30 厘米，
+             投影放大到屏幕外再连回来，屏幕上就是一道斜着切过天际的色带。 */
+          const z = camZ + 10 + i * STEP + (travel % STEP);
           if (z > camZ + FARZ) break;
           const idx = Math.floor(base / STEP) + i;
           const h = 5 + rnd(idx, 1, sgn) * 15;
@@ -1138,9 +1166,21 @@ const Pinch3D = {
         color: 0xe0a92c, specular: 0xfff0c0, shininess: 90,
         emissive: 0x3a2600, flatShading: false,
       }));
+      const spin = o.spin || 0;
+      const cz = R.wz(o.z);
       const m = R.take(R.g.disc, mat);
-      R.put(m, o.x, o.y, R.wz(o.z), 0.58, 0.58, 0.10);
-      m.rotation.set(0, o.spin || 0, 0);
+      R.put(m, o.x, o.y, cz, 0.58, 0.58, 0.10);
+      m.rotation.set(0, spin, 0);
+      /* 币面内圈：一枚稍小的亮金圆片贴在前脸，做出"币面凸起 + 外圈边沿"
+         的层次。以前就是一整块纯色圆片，近看是个黄圆片、远看是个黄点，
+         完全没有金属币该有的厚度和高光。偏移要沿金币法线走（跟着 spin
+         转），不然转到侧面时内圈会从币身里穿出来。 */
+      const inMat = R._coinInMat || (R._coinInMat = new THREE.MeshPhongMaterial({
+        color: 0xf7d071, specular: 0xfffbe0, shininess: 120, emissive: 0x4a3200,
+      }));
+      const m2 = R.take(R.g.disc, inMat);
+      R.put(m2, o.x + Math.sin(spin) * 0.038, o.y, cz + Math.cos(spin) * 0.038, 0.36, 0.36, 0.05);
+      m2.rotation.set(0, spin, 0);
 
       /* 地面投影 —— 金币"有多高"全靠它读出来。
          以前没有这层影子，一串悬空金币在屏幕上就是几个圆片排成一条直线，
@@ -1180,7 +1220,11 @@ const Pinch3D = {
         R.put(R.take(R.g.cube, R.matte('#ff8b2b', { flat: true })), o.x, y + 0.06, z, 0.68, 0.30, 0.32);
         R.put(R.take(R.g.cube, R.unlit('#f2ece0')), o.x, y - 0.18, z, 0.72, 0.09, 0.34);
       } else if (o.kind === 'board') {        /* 悬浮板：粉色薄板 */
-        R.put(R.take(R.g.cube, R.matte('#ff4fb0', { flat: true })), o.x, y, z, 0.88, 0.13, 0.36);
+        /* 板身斜立起来（绕 y 转 26°）。以前是平铺在地上的一小块，
+           远看就是块粉色地砖 —— 玩家根本读不出这是能捡的道具。
+           再加一道白高光条，缩到远处也还有"一块板"的轮廓。 */
+        R.put(R.take(R.g.cube, R.matte('#ff4fb0', { flat: true })), o.x, y + 0.06, z, 0.84, 0.13, 0.34, 0.14, 0.46, 0.10);
+        R.put(R.take(R.g.cube, R.unlit('#ffd9ef')), o.x, y + 0.14, z, 0.58, 0.03, 0.13, 0.14, 0.46, 0.10);
       } else if (o.kind === 'dash') {         /* 无敌冲刺：朝前的红色箭头 */
         R.put(R.take(R.g.cone, R.matte('#ff2d5e', { flat: true })), o.x, y, z, 0.46, 0.62, 0.46, Math.PI / 2, 0, 0);
         R.put(R.take(R.g.cube, R.unlit('#ffb3c4')), o.x, y - 0.42, z + 0.26, 0.16, 0.16, 0.16);
@@ -1253,30 +1297,58 @@ const Pinch3D = {
       if (!c) return;
       const W = Renderer.W, H = Renderer.H;
       if (th.rain > 0.05) {
-        c.save();
-        c.strokeStyle = 'rgba(190,215,240,.5)'; c.lineWidth = 1.2;
         const n = Math.floor(70 * th.rain);
+        c.save();
+        c.strokeStyle = 'rgba(190,215,240,.5)';
+        c.lineCap = 'round';
         for (let i = 0; i < n; i++) {
           const seed = i * 137.5;
+          /* 每滴雨的长短/斜度/粗细都要不一样。以前 70 滴全是同一根
+             "斜 3 竖 16"的短线平移复制，整片雨看着就是一张斜线阵列贴图。 */
+          const j = ((i * 61) % 97) / 97;
           const x = (seed * 7.3 + time * 60) % W;
           const y = (seed * 13.7 + time * 900) % H;
-          c.beginPath(); c.moveTo(x, y); c.lineTo(x - 3, y + 16); c.stroke();
+          c.lineWidth = 0.8 + j * 1.3;
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x - 2 - j * 4, y + 9 + j * 13);
+          c.stroke();
         }
         c.restore();
       }
-      if (speedRatio > 0.45) {
-        const a = (speedRatio - 0.45) / 0.55 * 0.45;
+      /* ---- 速度线：沿画面四边朝消失点拉的"风线" ----
+         老版本是在画面正中间摆一圈 14 根等长白线、整体慢慢旋转。两个毛病：
+         一是看着像屏幕上划了几道痕，完全不像速度；二是那些线正好糊在
+         要"看路"的画面中心，远处的几条还会被当成穿模白线（排查了半天）。
+         现在改成沿四条边撒点、朝消失点方向拉出渐隐短线：外端实、内端虚，
+         对应"四周景物被高速拉出残影"的观感，画面中心天然留白。
+         角度不再旋转 —— 转起来像雷达扫描，静止反而更像镜头。 */
+      if (speedRatio > 0.34) {
+        const a = (speedRatio - 0.34) / 0.66 * 0.34;
+        const cx = W * 0.5, cy = H * 0.44;
+        const per = 2 * (W + H);
         c.save();
-        c.strokeStyle = 'rgba(255,255,255,' + a.toFixed(2) + ')';
-        c.lineWidth = 2;
-        const cx = W * 0.5, cy = H * 0.52;
-        for (let i = 0; i < 14; i++) {
-          const ang = (i / 14) * Math.PI * 2 + time * 0.4;
-          const r0 = Math.min(W, H) * (0.30 + (i % 3) * 0.05);
-          c.beginPath();
-          c.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
-          c.lineTo(cx + Math.cos(ang) * (r0 + 70), cy + Math.sin(ang) * (r0 + 70));
-          c.stroke();
+        c.lineCap = 'round';
+        for (let i = 0; i < 22; i++) {
+          /* 两条确定伪随机，一个决定位置/长度，一个决定粗细/亮度 */
+          const k = ((i * 41) % 97) / 97;
+          const k2 = ((i * 67) % 89) / 89;
+          const t = (i + k) / 22 * per;
+          let ex, ey;
+          if (t < W) { ex = t; ey = 0; }
+          else if (t < W + H) { ex = W; ey = t - W; }
+          else if (t < 2 * W + H) { ex = W - (t - W - H); ey = H; }
+          else { ex = 0; ey = H - (t - 2 * W - H); }
+          const dx = cx - ex, dy = cy - ey;
+          const L = Math.hypot(dx, dy) || 1;
+          const len = (24 + k2 * 58) * (0.55 + speedRatio * 0.8);
+          const x1 = ex + dx / L * len, y1 = ey + dy / L * len;
+          const g = c.createLinearGradient(ex, ey, x1, y1);
+          g.addColorStop(0, 'rgba(255,255,255,' + (a * (0.5 + k2 * 0.5)).toFixed(3) + ')');
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          c.strokeStyle = g;
+          c.lineWidth = 1.2 + k2 * 1.6;
+          c.beginPath(); c.moveTo(ex, ey); c.lineTo(x1, y1); c.stroke();
         }
         c.restore();
       }

@@ -1008,30 +1008,52 @@ const Renderer = {
   drawWeather(theme, time, speedRatio) {
     const c = this.c, W = this.W, H = this.H;
     if (theme.rain > 0.05) {
-      c.strokeStyle = 'rgba(200,225,255,.45)';
-      c.lineWidth = 1.4;
       const n = Math.floor(90 * theme.rain);
+      c.save();
+      c.strokeStyle = 'rgba(200,225,255,.45)';
+      c.lineCap = 'round';
       for (let i = 0; i < n; i++) {
         const seed = i * 97.13;
+        /* 长短/斜度/粗细逐滴不同，否则整片雨就是一张斜线阵列贴图 */
+        const j = ((i * 61) % 97) / 97;
         const x = ((seed * 137 + time * 320) % (W + 200)) - 100;
         const y = ((seed * 311 + time * 1250) % (H + 200)) - 100;
-        c.beginPath(); c.moveTo(x, y); c.lineTo(x - 6, y + 22); c.stroke();
-      }
-    }
-    // 速度线
-    if (speedRatio > 0.55) {
-      const a = (speedRatio - 0.55) * 0.5;
-      c.strokeStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
-      c.lineWidth = 2;
-      for (let i = 0; i < 10; i++) {
-        const ang = (i / 10) * Math.PI * 2 + time * 0.6;
-        const r0 = Math.min(W, H) * 0.30, r1 = r0 + 60 + Math.sin(time * 9 + i) * 26;
-        const cxx = W / 2, cyy = this.horizon + H * 0.14;
+        c.lineWidth = 0.9 + j * 1.5;
         c.beginPath();
-        c.moveTo(cxx + Math.cos(ang) * r0, cyy + Math.sin(ang) * r0 * 0.75);
-        c.lineTo(cxx + Math.cos(ang) * r1, cyy + Math.sin(ang) * r1 * 0.75);
+        c.moveTo(x, y);
+        c.lineTo(x - 4 - j * 5, y + 13 + j * 18);
         c.stroke();
       }
+      c.restore();
+    }
+    // 速度线：沿四边朝消失点拉的渐隐风线（画法与 3D 侧一致，说明见 pinch3d.js）
+    if (speedRatio > 0.34) {
+      const a = (speedRatio - 0.34) / 0.66 * 0.34;
+      const cx = W * 0.5, cy = this.horizon + H * 0.14;
+      const per = 2 * (W + H);
+      c.save();
+      c.lineCap = 'round';
+      for (let i = 0; i < 22; i++) {
+        const k = ((i * 41) % 97) / 97;
+        const k2 = ((i * 67) % 89) / 89;
+        const t = (i + k) / 22 * per;
+        let ex, ey;
+        if (t < W) { ex = t; ey = 0; }
+        else if (t < W + H) { ex = W; ey = t - W; }
+        else if (t < 2 * W + H) { ex = W - (t - W - H); ey = H; }
+        else { ex = 0; ey = H - (t - 2 * W - H); }
+        const dx = cx - ex, dy = cy - ey;
+        const L = Math.hypot(dx, dy) || 1;
+        const len = (24 + k2 * 58) * (0.55 + speedRatio * 0.8);
+        const x1 = ex + dx / L * len, y1 = ey + dy / L * len;
+        const g = c.createLinearGradient(ex, ey, x1, y1);
+        g.addColorStop(0, 'rgba(255,255,255,' + (a * (0.5 + k2 * 0.5)).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        c.strokeStyle = g;
+        c.lineWidth = 1.2 + k2 * 1.6;
+        c.beginPath(); c.moveTo(ex, ey); c.lineTo(x1, y1); c.stroke();
+      }
+      c.restore();
     }
     // 暗角
     const vg = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.72);
