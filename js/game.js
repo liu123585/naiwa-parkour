@@ -74,6 +74,7 @@ const Game = {
     this._prevTravel = 0;
     this.score = 0; this.runCoins = 0; this.mult = 1; this.maxMult = 1;
     this.coinStreak = 0; this.objs = []; this.parts = []; this.nextZ = 46;
+    if (typeof Gen !== 'undefined') Gen.reserved.length = 0;
     this.invuln = 0; this.dying = 0; this.hurtFlash = 0; this.shake = 0;
     this.hitStop = 0; this.bounce = 0;
     this.nearMissCd = 0; this.coinSndCd = 0;
@@ -107,6 +108,14 @@ const Game = {
     if (Store.data.settings.music) Sound.startMusic();
     UI.countdown('出发!', 700);
     Sound.countdown(true);
+    /* 第一次开局放一张纯图形的操作示意卡（没有一句说明文字）。
+       看过一次就记住，不再打扰；想再看可以去设置里点"操作示意"。 */
+    if (UI.isTouch() && !Store.data.seenHowto) {
+      Store.data.seenHowto = true; Store.save();
+      UI.showHowto();
+    } else {
+      UI.hideHowto();
+    }
     // 起步生成少量金币
     for (let i = 0; i < 7; i++) this.addCoin(this.travel + 22 + i * 2.2, 0, 0.85);
   },
@@ -253,6 +262,11 @@ const Game = {
     p.lean = Utils.lerp(p.lean, Utils.clamp(ldx * 1.6, -1, 1), 1 - Math.pow(0.001, dt));
     if (p.rollT > 0) {
       p.rollT -= dt;
+      /* 滑铲拖尾：贴着地面往后甩一串亮蓝火花 + 两道滑痕。
+         这是"滑铲"和"跳跃"在画面上的第二个区分点 ——
+         跳跃是往上、有影子变小；滑铲是往下、有地面摩擦。
+         只在地面上留痕，空中下滑（快速落地）不留。 */
+      if (p.grounded) this.spawnSlideTrail();
       if (p.rollT <= 0) { p.rollT = 0; if (p.grounded) p.state = 'run'; }
     }
     // 悬浮板计时（库存板）
@@ -363,6 +377,13 @@ const Game = {
     for (let i = 0; i < this.objs.length; i++) {
       const o = this.objs[i];
       if (o.vz) o.worldZ -= o.vz * dt;
+      /* 迎面列车进到 150 米以内才报警（生成时它还在 270 米开外，看不见） */
+      if (o.warnAt && o.worldZ - this.travel <= o.warnAt) {
+        o.warnAt = 0;
+        const lx = o.x / CFG.LANE_W + 1;
+        UI.warn('⚠ ' + (lx < 0.5 ? '左侧' : lx > 1.5 ? '右侧' : '中间') + '车道有列车驶来！');
+        Sound.deny();
+      }
       /* 横扫杆：在两条车道之间来回摆动，撞到边界反向 */
       if (o.vx) {
         o.x += o.vx * dt;
@@ -838,8 +859,30 @@ const Game = {
       this.parts.push(pt);
     }
   },
-  spawnJetCoin() {
+  /* 滑铲拖尾：亮蓝火花 + 贴地滑痕。
+     每帧只补 1~2 个，靠"持续"而不是"一次喷一堆"来形成轨迹，
+     这样拖尾长度自然跟着滑铲时长走，也不会把粒子池打满。 */
+  _slideT: 0,
+  spawnSlideTrail() {
     const p = this.player;
+    this._slideT += 1;
+    if (this._slideT % 2 !== 0) return;
+    for (let i = 0; i < 2; i++) {
+      const pt = this._take('parts');
+      pt.x = p.x + Utils.rand(-0.34, 0.34);
+      pt.y = Utils.rand(0.02, 0.16);
+      pt.z = this.travel + Utils.rand(-0.5, 0.1);
+      pt.vx = Utils.rand(-0.8, 0.8);
+      pt.vy = Utils.rand(0.15, 0.7);
+      pt.vz = Utils.rand(-9, -4.5);          // 往后甩，速度感来自这里
+      pt.r = Utils.rand(0.04, 0.085);
+      pt.life = 0.26; pt.max = 0.26;
+      pt.color = i === 0 ? '#7fd8ff' : '#dcd7c8';
+      pt.shape = 'dot';
+      this.parts.push(pt);
+    }
+  },
+  spawnJetCoin() {    const p = this.player;
     this._jetT = (this._jetT || 0) + 1;
     if (this._jetT % 8 !== 0) return;
     this.addCoin(this.travel + 26, p.x, 3.4);
@@ -868,17 +911,47 @@ const Game = {
        地图还是"一段障碍 + 一段空"的节奏，玩家根本感觉不到在变难。
        提前把复杂段落放出来，才有"越跑越吃紧"的体感。 */
     const d = Utils.clamp(this.travel / 1900, 0, 1);
-    const r = Math.random();
     const G = Gen;
-    G.z = z;
-    let guard = 0;
-    const before = this.objs.length;
+    G.pruneReserved(this.travel);
+    /* 候选集只筛一次：窗口 [z-3, z+150]。
+       上界给到 150 是因为"迎面列车"会被扔到 z+120 去，
+       它必须出现在候选集里，否则新生成的东西压到它身上时验不出来。 */
+    const near = G.gatherSolids(z - 3, z + 150);
+    const nearBase = near.length;
+    let guard = 0, ok = false;
     do {
       G.z = z;
       G.diff = d;
-      Gen.pickPattern(d);
+      const mark = this.objs.length;
+      const rmark = G.reserved.length;
+      G.pickPattern(d);
       guard++;
-    } while (this.objs.length === before && guard < 6);   // 保证每段都产出东西
+      if (this.objs.length === mark) continue;          // 这段什么都没产出，重抽
+      /* 只把"会挡路的东西"补进候选集。金币和道具必须排除 ——
+         它们不算障碍，但会跟车厢在 z 上重叠（车顶金币线就是压在车厢上的），
+         一起丢进来就会把"车顶金币线"误判成穿模，
+         于是所有带车顶金币的段落（楼梯 / 斜坡 / 弹跳 / 长车厢）全被误杀。 */
+      for (let i = mark; i < this.objs.length; i++) {
+        const o = this.objs[i];
+        if (o.kind === 'train' || o.kind === 'obstacle') near.push(o);
+      }
+      for (let i = rmark; i < G.reserved.length; i++) near.push(G.reserved[i]);
+      /* 生成完立刻验一遍"这段路有没有解"。
+         以前靠的是"每条段落自己保证留一条道"这个口头约定，
+         但迎面列车会在 120 米外埋一节车厢、而且它会朝玩家开过来 ——
+         约定当场就破了：实测 900 段里能抽出 100 处"三条道全堵死"的死局。
+         现在改成生成后统一验证，以后再加新段落也不用再操心这件事。 */
+      if (!G.solvable(near, nearBase, z - 1, G.z + 1)) {
+        for (let i = mark; i < this.objs.length; i++) this._give('objs', this.objs[i]);
+        this.objs.length = mark;
+        G.reserved.length = rmark;
+        near.length = nearBase;
+        continue;
+      }
+      ok = true;
+    } while (!ok && guard < 8);
+    /* 八次都抽不出合法段落：宁可空一段，也不能把死局放出去 */
+    if (!ok) G.z = z + 14;
     /* 段落间距随难度收一点：早期松、后期紧，给玩家喘气的时间越来越少。
        但保底 4 米 —— 再小两个段落就会叠在一起，变成没得选的必死局。 */
     this.nextZ = G.z + Utils.rand(4, 12 - d * 3);
@@ -953,6 +1026,115 @@ const Game = {
 const Gen = {
   z: 0, diff: 0,
   laneX: (l) => Utils.laneX(l),
+
+  /* ---------------------------------------------------------
+     预留区（reserved）
+     给"会动的东西"占位用的。目前只有一个用户：迎面列车。
+     它被扔到 120 米外，然后一路倒着扫回来 —— 扫过的这六七十米里
+     不能再有别的物体，否则两个后果：
+       · 穿模：火车从别的火车/隧道里直接开过去，一眼就看出是假的；
+       · 死局：它扫过的那条道如果同时被别的段落封死，玩家会看到
+         "远处火车冲过来、近处三条道全封住"，除了等死没别的办法。
+     所以生成它的时候顺手把整条扫掠区间登记下来，
+     后面每一段生成完都拿这份登记表验一遍（见 solvable）。
+     注意登记发生在生成游标之前（预留区间永远在 G.z 前面），
+     所以不需要回头删已经生成的东西。 */
+  reserved: [],
+
+  reserve(lane, z0, z1) {
+    this.reserved.push({
+      ghost: true, kind: 'train', x: Utils.laneX(lane), hw: 1.07, h: 3.3,
+      worldZ: z0, len: Math.max(0.6, z1 - z0),
+    });
+  },
+
+  /* 玩家跑过之后这份占位就没用了，回收掉别让它无限涨 */
+  pruneReserved(travel) {
+    const r = this.reserved;
+    let w = 0;
+    for (let i = 0; i < r.length; i++) {
+      if (r[i].worldZ + r[i].len > travel - 30) r[w++] = r[i];
+    }
+    r.length = w;
+  },
+
+  /* 一个物体在某条道上"能不能过"——全套判定的唯一口径。
+     审计脚本（tools/audit-level.js）也调它，免得两处规则各自漂移，
+     出现"测试说能过、玩家过不去"这种事。 */
+  passable(o) {
+    if (o.decor || o.stair || o.spring || o.ramp) return true;
+    if (o.kind === 'coin' || o.kind === 'power') return true;
+    if (o.kind === 'train') return o.h <= 1.6;      // 矮车厢能跳上车顶
+    if (o.sweep) return true;                        // 横扫杆掐时机能跳
+    if ((o.y0 || 0) >= 1.2) return true;             // 上沿封顶型：滑铲能过
+    return (o.y1 || 1.05) <= 1.1;                    // 矮障碍：跳过去
+  },
+
+  /* 把 [z0,z1] 窗口里"会挡路的东西"捞出来（实体 + 预留占位）。
+     提前筛一次，后面重抽时复用，避免每次重抽都全表扫一遍。 */
+  gatherSolids(z0, z1) {
+    const out = [];
+    for (const o of Game.objs) {
+      if (o.kind !== 'train' && o.kind !== 'obstacle') continue;
+      const a0 = o.worldZ, a1 = o.worldZ + (o.len || 0.6);
+      if (a1 < z0 || a0 > z1) continue;
+      out.push(o);
+    }
+    for (const r of this.reserved) {
+      if (r.worldZ + r.len < z0 || r.worldZ > z1) continue;
+      out.push(r);
+    }
+    return out;
+  },
+
+  /* 扫一遍 [z0,z1]，问两个问题：
+       1) 有没有哪个 1 米切片上三条道全被堵死？（无解 → 玩家必死）
+       2) 新生成的东西有没有压在已有物体身上？（重叠 → 穿模）
+     任何一条不满足就返回 false，调用方重抽。
+     list 是候选集，[from, list.length) 这一段是本次新生成的。 */
+  solvable(list, from, z0, z1) {
+    const tol = 0.38, LANES = CFG.LANES;
+    /* 先把跟扫描区间无关的剔掉：候选集窗口开得很大（为了抓迎面列车），
+       但真正要逐步扫的只有这一小段。 */
+    const near = [];
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      const a0 = o.worldZ, a1 = o.worldZ + (o.len || 0.6);
+      if (a1 < z0 - 2 || a0 > z1 + 2) continue;
+      near.push(o);
+    }
+    for (let z = z0; z <= z1; z += 1) {
+      let blocked = 0;
+      for (let l = 0; l < LANES; l++) {
+        const lx = Utils.laneX(l);
+        let has = false, ok = false;
+        for (let i = 0; i < near.length; i++) {
+          const o = near[i];
+          if (Math.abs(o.x - lx) > (o.hw || 0.95) + tol) continue;
+          const a0 = o.worldZ, a1 = o.worldZ + (o.len || 0.6);
+          if (z < a0 - 0.4 || z > a1 + 0.4) continue;
+          has = true;
+          if (this.passable(o)) { ok = true; break; }
+        }
+        if (has && !ok) blocked++;
+      }
+      if (blocked >= LANES) return false;
+    }
+    /* 重叠：只看新生成的那几个，跟全场比对。
+       楼梯和它要爬的车厢是首尾相接（重叠恰好 0），所以 0.05 的接缝容差够用。 */
+    for (let i = from; i < list.length; i++) {
+      const a = list[i];
+      const a0 = a.worldZ, a1 = a.worldZ + (a.len || 0.6);
+      for (let j = 0; j < list.length; j++) {
+        if (j === i) continue;
+        const b = list[j];
+        if (Math.abs(a.x - b.x) > 0.35) continue;
+        const b0 = b.worldZ, b1 = b.worldZ + (b.len || 0.6);
+        if (Math.min(a1, b1) - Math.max(a0, b0) > 0.05) return false;
+      }
+    }
+    return true;
+  },
 
   /* 每条段落都必须保证至少一条车道可通过 */
   patterns: [
@@ -1042,10 +1224,21 @@ const Gen = {
        把反应窗口从最紧的 1.3 秒放宽到 1.8 秒左右 —— 有压迫感，但不冤死。 */
     { id: 'oncoming', w: () => Gen.diffGuess > 0.03 ? 15 : 0, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      const t = Game.addTrain(G.z + 120, lane, 22, 3.3, { vz: 17 + 10 * Gen.diffGuess, headlight: true });
+      const len = 22;
+      const vz = 17 + 10 * Gen.diffGuess;
+      const spawn = G.z + 120;
+      const t = Game.addTrain(spawn, lane, len, 3.3, { vz, headlight: true });
       t.oncoming = true;
-      UI.warn('⚠ ' + (lane === 0 ? '左侧' : lane === 1 ? '中间' : '右侧') + '车道有列车驶来！');
-      Sound.deny();
+      /* 报警不能在生成的时候喊 —— 生成点在 120 米外、而生成游标本身
+         还在玩家前面 160 米，加起来这节车厢要 3~5 秒才追到脸上。
+         太早喊只会让人莫名其妙地变道。等它进到 150 米以内再喊。 */
+      t.warnAt = 150;
+      /* 它倒着扫回来的这段路必须清空：算一下扫掠距离
+           t* = 距离 / (玩家速度 + 车速)，扫掠 = 车速 × t*
+         然后整段登记成预留区。用当前实际速度算，不写死。 */
+      const S = Math.max(14, Game.speed);
+      const sweep = vz * (spawn - Game.travel) / (S + vz);
+      G.reserve(lane, spawn - sweep - 8, spawn + len + 8);
       G.z += 16;
     } },
     { id: 'reward', w: () => 6, fn: (G) => {
@@ -1517,15 +1710,25 @@ Object.assign(Game, {
     UI.showMenu();
   },
 
-  /* ---------------- 输入 ---------------- */
+  /* ---------------- 输入 ----------------
+     触屏滑动 / 鼠标拖动 / 键盘三套输入，共用同一套手势判定。
+     所有灵敏度参数集中在这里，调手感不用满文件找。
+
+     目标是"跟手"：手指一动就出动作 ——
+       · 不等抬指（滑动在 move 事件里就触发，不等 touchend）
+       · 不等长距离（阈值压到 12~14 物理像素）
+       · 不等下一次事件循环（直接调，不做 setTimeout 排队）
+     抬指只有一种情况才有意义：整个手势期间手指没动过 → 算"点按"，跳一下。
+     这也是手机上唯一需要抬指的输入，滑动、变道、滑铲全是即时触发。 */
   bindInput() {
+    /* ---- 键盘：方向键 / WASD / 空格跳 / Shift 板 ---- */
     document.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
       if (k === 'arrowleft' || k === 'a') { this.moveLane(-1); e.preventDefault(); }
       else if (k === 'arrowright' || k === 'd') { this.moveLane(1); e.preventDefault(); }
-      else if (k === 'arrowup' || k === 'w') { this.jump(); e.preventDefault(); }
+      else if (k === 'arrowup' || k === 'w' || k === ' ') { this.jump(); e.preventDefault(); }
       else if (k === 'arrowdown' || k === 's') { this.roll(); e.preventDefault(); }
-      else if (k === ' ' || k === 'shift' || k === 'b') { this.useBoard(); e.preventDefault(); }
+      else if (k === 'shift' || k === 'b') { this.useBoard(); e.preventDefault(); }
       else if (k === 'p' || k === 'escape') {
         if (this.state === 'run') this.pause();
         else if (this.state === 'pause') this.resume();
@@ -1538,50 +1741,84 @@ Object.assign(Game, {
       Sound.resume();
     });
 
-    // 触屏滑动
-    let sx = 0, sy = 0, st = 0, moved = false, lastTap = 0;
-    const el = document.getElementById('ui');
-    el.addEventListener('touchstart', (e) => {
-      const t = e.touches[0];
-      sx = t.clientX; sy = t.clientY; st = performance.now(); moved = false;
-      Sound.resume();
-    }, { passive: true });
-    el.addEventListener('touchmove', (e) => {
-      if (this.state !== 'run') return;
-      const t = e.touches[0];
-      const dx = t.clientX - sx, dy = t.clientY - sy;
-      if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
-        this.moveLane(dx > 0 ? 1 : -1); sx = t.clientX; moved = true;
-      } else if (Math.abs(dy) > 30) {
-        if (dy < 0) this.jump(); else this.roll();
-        sy = t.clientY; moved = true;
-      }
-    }, { passive: true });
-    el.addEventListener('touchend', (e) => {
-      const dt = performance.now() - st;
-      if (!moved && dt < 260 && this.state === 'run') {
-        const now = performance.now();
-        if (now - lastTap < 300) { this.useBoard(); lastTap = 0; }
-        else { this.jump(); lastTap = now; }
-      }
-      moved = false;
-    }, { passive: true });
+    /* ---- 滑动（触屏 + 鼠标共用）----
+       监听挂在 document 上，不挂在 #ui 上。
+       原因：#ui 是 pointer-events:none、两块 canvas 才是真正的命中目标，
+       挂在 #ui 上时"在屏幕中间划"根本收不到事件 —— 只有划到 HUD 那几个小角
+       才有反应。这就是之前必须靠屏幕按钮的原因，也是"滑动不跟手"的根。
+       挂 document 之后，屏幕上任何位置起手都能识别。 */
+    const TH = { x: 14, up: 14, down: 12 };
+    const TAP_MS = 220;      // 抬指前没动过、且在这个时间内松手 → 算点按（跳）
+    /* fired：一次手势（按下 → 抬起）只出一个动作。
+       这条是必需的，不是为了"防抖"这么简单 ——
+       没有它的话，一次 50 像素的斜滑会被切成两次触发
+       （第一次跨过阈值触发、手指继续走又跨过一次），
+       玩家在 1 号道想往右躲一下，结果一下窜到 3 号道。
+       有了它，一次滑动 = 一个动作，想连变两条道就抬一下手指再划，
+       抬指重按只要几十毫秒，手感上完全察觉不到。
+       动作仍然是"跨过阈值的那一帧立刻出"，没有任何等待。 */
+    let ox = 0, oy = 0, down = false, fired = false, t0 = 0, axis = 0;
 
-    // 屏幕按钮
-    const bind = (id, fn, repeat) => {
-      const b = document.getElementById(id);
-      if (!b) return;
-      const fire = (e) => { e.preventDefault(); Sound.resume(); fn(); };
-      b.addEventListener('touchstart', fire, { passive: false });
-      b.addEventListener('mousedown', fire);
-      if (repeat) {
-        b.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
+    const blocked = (t) => !!(t && t.closest && t.closest('button,a,input,select,.panel,.screen'));
+
+    const start = (x, y, t) => {
+      if (blocked(t) || this.state !== 'run') { down = false; return; }
+      ox = x; oy = y; down = true; fired = false; axis = 0;
+      t0 = performance.now();
+    };
+    const move = (x, y) => {
+      if (!down || fired || this.state !== 'run') return;
+      const dx = x - ox, dy = y - oy;
+      /* 轴锁定：一次手势只认一个方向。
+         不锁的话斜着划会先变道、再跳，两个动作叠在一起。 */
+      if (!axis) {
+        if (Math.abs(dx) >= TH.x) axis = 1;
+        else if (Math.abs(dy) >= TH.up) axis = 2;
+        else return;
+      }
+      if (axis === 1) {
+        if (Math.abs(dx) < TH.x) return;
+        this.moveLane(dx > 0 ? 1 : -1);
+        UI.flashGesture(dx > 0 ? 'right' : 'left', x, y);
+      } else {
+        if (Math.abs(dy) < (dy < 0 ? TH.up : TH.down)) return;
+        if (dy < 0) { this.jump(); UI.flashGesture('jump', x, y); }
+        else { this.roll(); UI.flashGesture('slide', x, y); }
+      }
+      fired = true;
+    };
+    const end = (x, y) => {
+      if (!down) return;
+      down = false;
+      /* 整段手势手指没动过 → 算点按，跳一下。
+         这是手机上唯一需要抬指才生效的输入，其余全是即时触发。 */
+      if (!fired && this.state === 'run' && performance.now() - t0 < TAP_MS) {
+        this.jump(); UI.flashGesture('jump', x, y);
       }
     };
-    bind('padLeft', () => this.moveLane(-1));
-    bind('padRight', () => this.moveLane(1));
-    bind('padJump', () => this.jump());
-    bind('padRoll', () => this.roll());
+
+    document.addEventListener('touchstart', (e) => { const t = e.touches[0]; if (t) { start(t.clientX, t.clientY, e.target); } Sound.resume(); }, { passive: true });
+    document.addEventListener('touchmove', (e) => { const t = e.touches[0]; if (t) move(t.clientX, t.clientY); }, { passive: true });
+    document.addEventListener('touchend', (e) => { const t = e.changedTouches[0]; if (t) end(t.clientX, t.clientY); }, { passive: true });
+    document.addEventListener('touchcancel', () => { down = false; }, { passive: true });
+
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      Sound.resume();
+      start(e.clientX, e.clientY, e.target);
+    });
+    window.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+    window.addEventListener('mouseup', (e) => end(e.clientX, e.clientY));
+
+    /* ---- HUD 上剩下的两个按钮 ---- */
+    const bind = (id, fn) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      const fire = (e) => { e.preventDefault(); e.stopPropagation(); Sound.resume(); fn(); };
+      b.addEventListener('touchstart', fire, { passive: false });
+      b.addEventListener('mousedown', fire);
+      b.addEventListener('click', fire);
+    };
     bind('btnBoard', () => this.useBoard());
     bind('btnPause', () => this.pause());
   },

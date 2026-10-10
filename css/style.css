@@ -145,15 +145,62 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .toast{position:absolute;left:50%;top:28%;transform:translate(-50%,-50%) scale(.8);padding:10px 22px;border-radius:16px;background:rgba(20,23,30,.72);color:var(--milk);font-weight:900;font-size:19px;opacity:0;transition:opacity .18s, transform .18s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 
-/* 触屏按钮 */
-.pad{position:absolute;left:0;right:0;bottom:calc(12px + var(--safe-b));display:flex;justify-content:space-between;padding:0 14px;pointer-events:none;opacity:0;transition:opacity .25s}
-.pad.show{opacity:1}
-.pad-group{display:flex;gap:10px;pointer-events:auto}
-.pad-btn{width:66px;height:66px;border-radius:22px;border:2px solid rgba(255,255,255,.28);background:rgba(20,23,30,.42);color:#fff;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;font-family:inherit}
-.pad-btn:active{background:rgba(255,211,77,.55);transform:scale(.93)}
-.pad-arrow{width:72px}
-.pad-jump{background:rgba(124,212,74,.34)}
-.pad-roll{background:rgba(75,184,255,.34)}
+/* ---------------- 手势反馈 ----------------
+   滑屏时在指尖闪一个方向箭头。这一层必须 pointer-events:none，
+   否则它自己会吃掉后续的 touchmove，滑动立刻变卡。 */
+.gfx{position:absolute;inset:0;pointer-events:none;z-index:6}
+/* 同上：.hud > * 会把直接子元素改成 auto，这里要盖回来，
+   否则这层反馈动画会挡住滑屏。 */
+.hud > .gfx{pointer-events:none}
+.gfx-item{position:absolute;width:76px;height:76px;margin:-38px 0 0 -38px;opacity:0;transform:scale(.7)}
+.gfx-item svg{width:100%;height:100%;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.gfx-item .g-trail{stroke:#fff;stroke-width:5;opacity:.55}
+.gfx-item .g-head{stroke-width:7}
+.gfx-item .g-ground{stroke-width:5;opacity:.75}
+.gfx-left .g-head,.g-right .g-head{stroke:#ffd34d}
+.gfx-jump .g-head{stroke:#8ce85a}
+.gfx-slide .g-head{stroke:#5cc4ff}
+.gfx-slide .g-ground{stroke:#5cc4ff}
+.gfx-item.pop{animation:gfxPop .42s cubic-bezier(.16,.9,.3,1) forwards}
+@keyframes gfxPop{
+  0%{opacity:0;transform:scale(.6) translateY(6px)}
+  22%{opacity:1;transform:scale(1.08)}
+  60%{opacity:.95;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.22)}
+}
+
+/* ---------------- 开局操作示意（全图形） ---------------- */
+.howto{position:absolute;left:50%;top:calc(50% - 30px);transform:translate(-50%,-50%);width:min(92vw,660px);
+  padding:14px 16px;border-radius:24px;background:rgba(11,14,19,.88);border:2px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:7;
+  animation:howtoIn .34s ease-out both}
+/* 示意卡是纯展示层，绝不能吃掉滑屏手势。
+   .ui > * 那条规则把直接子元素都设成了 pointer-events:auto，
+   这里必须用同等特异度盖回来。 */
+.ui > .howto{pointer-events:none}
+.howto.hidden{display:none}
+@keyframes howtoIn{from{opacity:0;transform:translate(-50%,-50%) scale(.9)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+.howto-svg{width:100%;height:auto;display:block}
+/* 设置面板里常驻的那一份：面板本身是浅色的，所以给它垫一块深色底，
+   同一套图形不用改颜色就能直接复用。 */
+.howto-card{background:#1e2430;border-radius:18px;padding:10px 12px;margin:2px 0;overflow:hidden}
+.howto-card .howto-svg{width:100%;height:auto;display:block}
+.hw-bg{fill:rgba(255,255,255,.07);stroke:rgba(255,255,255,.16);stroke-width:2}
+.hw-finger{fill:#fdfaf3;stroke:#2b2622;stroke-width:2}
+.hw-arrow{fill:none;stroke-width:6;stroke-linecap:round}
+.hw-head{fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.hw-guy{fill:#fdfaf3;stroke:#2b2622;stroke-width:2}
+.hw-mouse{fill:rgba(255,255,255,.18);stroke:#fdfaf3;stroke-width:2.5}
+.hw-mouse-line{stroke:#fdfaf3;stroke-width:2.5;stroke-linecap:round}
+.hw-key{fill:rgba(255,255,255,.12);stroke:rgba(255,255,255,.34);stroke-width:2}
+/* 键帽上的 W/A/S/D：属于图示的一部分（标准键帽印字），不是说明文案 */
+.hw-cap{fill:rgba(255,255,255,.82);font-size:19px;font-weight:800;text-anchor:middle;
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;letter-spacing:.5px}
+.hw-sep{stroke:rgba(255,255,255,.18);stroke-width:2;stroke-dasharray:5 7}
+/* 四格依次点亮，像一条自动循环的演示动画，不用一个字 */
+.hw{opacity:.5;animation:hwPulse 8s ease-in-out infinite}
+.hw2{animation-delay:2s}.hw3{animation-delay:4s}.hw4{animation-delay:6s}
+@keyframes hwPulse{0%,100%{opacity:.5}6%,20%{opacity:1}}
 
 /* ---------------- 主菜单：车间工作台 ----------------
    背景不再是"一块不透明的墨绿切割垫"，而是一层半透的压暗罩——

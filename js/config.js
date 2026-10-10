@@ -295,6 +295,7 @@ const DEFAULT_SAVE = {
   achClaimed: [],
   runs_log: [],
   seenIntro: false,
+  seenHowto: false,        // 是否已经看过开局的操作示意卡（纯图形，只看一次）
 };
 
 const Store = {

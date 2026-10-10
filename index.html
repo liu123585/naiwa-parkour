@@ -29,23 +29,19 @@
         <div class="chip chip-shield hidden" id="chipShield"><b id="hudShield">8</b><span>s 护盾</span></div>
       </div>
       <div class="hud-right">
+        <button id="btnBoard" class="icon-btn" title="悬浮板（Shift）"><i class="ico ico-board"></i></button>
         <button id="btnPause" class="icon-btn" title="暂停（P）"><i class="ico ico-pause"></i></button>
       </div>
     </div>
     <div id="powerBar" class="power-bar"></div>
     <div id="comboTag" class="combo-tag"></div>
     <div id="toast" class="toast"></div>
-    <div class="pad">
-      <div class="pad-group">
-        <button id="padLeft" class="pad-btn pad-arrow"><i class="ico ico-left"></i></button>
-        <button id="padRight" class="pad-btn pad-arrow"><i class="ico ico-right"></i></button>
-      </div>
-      <div class="pad-group">
-        <button id="padRoll" class="pad-btn pad-roll"><i class="ico ico-roll"></i></button>
-        <button id="padJump" class="pad-btn pad-jump"><i class="ico ico-jump"></i></button>
-      </div>
-    </div>
+    <!-- 手势反馈：手指划到哪就在哪闪一个方向箭头，一眼就知道自己刚做了什么 -->
+    <div id="gfx" class="gfx"></div>
   </div>
+
+  <!-- 操作示意：全图形，零说明文字。放在 HUD 外面，设置面板里也能直接调出来看 -->
+  <div id="howto" class="howto hidden"></div>
 
   <!-- ============ 主菜单 ============ -->
   <div id="screenMenu" class="screen">
@@ -235,6 +231,9 @@
           </div>
         </div>
         <div class="setting-row"><span>操作提示</span><button class="switch on" id="setTips"></button></div>
+        <div class="panel-sep"></div>
+        <!-- 操作示意：直接把图画在设置里，随时能对着看，不用读说明 -->
+        <div class="howto-card" id="howtoCard"></div>
         <div class="panel-sep"></div>
         <button class="btn btn-primary btn-block" id="btnUnlockAll">一键解锁全部内容（破解模式）</button>
         <button class="btn btn-danger btn-block" id="btnWipe">清空存档（金币/角色/记录）</button>

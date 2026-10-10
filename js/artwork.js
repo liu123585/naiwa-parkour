@@ -209,10 +209,12 @@ const ARTDRAW = {
     if (st === 'idle') {
       return this.sprite(c, frames[0], { sy: 1 + Math.sin(t * Math.PI * 2) * 0.02, dy: 0.008 });
     }
-    if (st === 'jump') return this.sprite(c, frames[0], { sy: 1.09, sx: 0.94 });
+    /* 2D 兜底画面也跟 3D 对齐：跳跃"抻长"、滑铲"压扁并前倾"，
+       不再用"转一圈"来表示滑铲（转一圈在小屏上读不出是滑铲）。 */
+    if (st === 'jump') return this.sprite(c, frames[0], { sy: 1.12, sx: 0.93 });
     if (st === 'fall') return this.sprite(c, frames[0], { sy: 0.95, sx: 1.05 });
     if (st === 'fly') return this.sprite(c, frames[Math.floor(t * 3) % n], { rot: 0.06 });
-    if (st === 'roll') return this.sprite(c, frames[0], { rot: -t * Math.PI * 2, h: 0.72, dy: 0.05 });
+    if (st === 'roll') return this.sprite(c, frames[0], { rot: -0.42, sy: 0.62, sx: 1.16, dy: 0.09 });
     if (st === 'crash') return this.sprite(c, frames[0], { rot: -0.8, h: 0.92 });
     return this.sprite(c, frames[Math.floor(t * n) % n], null);
   },

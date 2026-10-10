@@ -9,6 +9,7 @@
     "test:api": "node tools/test-api.mjs",
     "test:collide": "node tools/test-collide.js",
     "test:ui": "node tools/test-ui.js",
+    "test:level": "node tools/audit-level.js 900",
     "test:bgm": "node tools/test-bgm.js",
     "deploy": "edgeone makers deploy"
   },

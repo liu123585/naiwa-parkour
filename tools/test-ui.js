@@ -101,6 +101,174 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     R.push({ name: '商城购买', expect: 'yes', got: 'skip', extra: '没有可买的付费角色' });
   }
 
+  /* ---------- 5. 输入：滑屏 / 鼠标拖动 / 键盘 ----------
+     这一节是"用户说操作不跟手、铲跳分不清"之后补的回归。
+     测法：在页面里给 jump / roll / moveLane 挂钩子记录调用，
+     然后用真实触摸事件（CDP Input.dispatchTouchEvent，走浏览器原生链路，
+     不是 JS 手动 new 一个事件）划屏，看钩子有没有被叫到。
+     关键不是"能不能触发"，而是"多少距离才触发"——
+     阈值调大了就不跟手，调小了就误触，两头都要钉住。 */
+  await page.evaluate(() => {
+    UI.hideAllScreens(); UI.showHUD(); Game.start();
+    /* 把 update 停掉：测试期间角色不能动、不能死，否则撞一下状态就乱了 */
+    Game.update = function () {};
+    window.__calls = [];
+    ['jump', 'roll', 'moveLane', 'useBoard'].forEach((m) => {
+      const o = Game[m];
+      Game[m] = function () {
+        window.__calls.push(m + ':' + Array.prototype.join.call(arguments, ','));
+        return o.apply(this, arguments);
+      };
+    });
+  });
+  await page.waitForTimeout(300);
+
+  const cdp = await ctx.newCDPSession(page);
+  const reset = () => page.evaluate(() => {
+    window.__calls.length = 0;
+    const p = Game.player;
+    p.lane = 1; p.x = 0; p.y = 0; p.vy = 0; p.rollT = 0; p.grounded = true; p.state = 'run';
+    Game.state = 'run'; Game.dying = 0; Game.invuln = 999;
+  });
+  const calls = () => page.evaluate(() => window.__calls.slice());
+  const hit = (arr, re) => arr.some((s) => re.test(s));
+  let c = [];
+
+  const swipe = async (x0, y0, x1, y1, steps) => {
+    steps = steps || 8;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t }],
+      });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(70);
+  };
+  const drag = async (x0, y0, x1, y1) => {
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x1, y1, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(70);
+  };
+
+  /* 5.1 上滑 = 跳，而且恰好一次 */
+  await reset();
+  await swipe(195, 560, 195, 500);
+  c = await calls();
+  R.push({ name: '滑屏：上滑 = 跳（恰好一次）', expect: '1', got: String(c.filter((s) => /^jump/.test(s)).length), extra: c.join(' ') });
+
+  /* 5.2 下滑 = 滑铲，而且恰好一次 */
+  await reset();
+  await swipe(195, 500, 195, 560);
+  c = await calls();
+  R.push({ name: '滑屏：下滑 = 滑铲（恰好一次）', expect: '1', got: String(c.filter((s) => /^roll/.test(s)).length), extra: c.join(' ') });
+
+  /* 5.3 左滑 / 右滑 = 变道 */
+  await reset();
+  await swipe(150, 560, 250, 560);
+  c = await calls();
+  R.push({ name: '滑屏：右滑 = 右移一条道', expect: 'moveLane:1', got: (c[0] || '(无)'), extra: '' });
+  await reset();
+  await swipe(250, 560, 150, 560);
+  c = await calls();
+  R.push({ name: '滑屏：左滑 = 左移一条道', expect: 'moveLane:-1', got: (c[0] || '(无)'), extra: '' });
+
+  /* 5.4 灵敏度：16 像素就该出动作（"跟手"的量化标准） */
+  await reset();
+  await swipe(195, 560, 195, 544, 4);
+  c = await calls();
+  R.push({ name: '灵敏度：滑动 16px 就触发', expect: 'yes', got: hit(c, /^jump/) ? 'yes' : 'no', extra: c.join(' ') });
+
+  /* 5.5 微动 8px 够不到阈值，抬指时算"点按" → 跳。
+         要点是：绝不能误判成变道或滑铲（那才是真的会害死玩家）。 */
+  await reset();
+  await swipe(195, 560, 195, 552, 4);
+  c = await calls();
+  R.push({
+    name: '微动 8px 只算点按，不误判成变道/滑铲', expect: 'yes',
+    got: (c.filter((s) => /^(moveLane|roll)/.test(s)).length === 0 && hit(c, /^jump/)) ? 'yes' : 'no',
+    extra: c.join(' '),
+  });
+
+  /* 5.6 斜滑只出一个动作：不许又变道又跳，也不许一次窜两条道 */
+  await reset();
+  await swipe(195, 560, 245, 510);
+  c = await calls();
+  const acts = c.filter((s) => /^(jump|roll|moveLane)/.test(s));
+  R.push({ name: '斜滑只出一个动作', expect: '1', got: String(acts.length), extra: c.join(' ') });
+
+  /* 5.7 点按（不移动）= 跳 */
+  await reset();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 560 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(80);
+  c = await calls();
+  R.push({ name: '点按 = 跳', expect: 'yes', got: hit(c, /^jump/) ? 'yes' : 'no', extra: c.join(' ') });
+
+  /* 5.8 鼠标拖动：上 / 下 / 左右 */
+  await reset();
+  await drag(195, 560, 195, 500);
+  c = await calls();
+  R.push({ name: '鼠标：向上拖动 = 跳', expect: 'yes', got: hit(c, /^jump/) ? 'yes' : 'no', extra: c.join(' ') });
+  await reset();
+  await drag(195, 500, 195, 560);
+  c = await calls();
+  R.push({ name: '鼠标：向下拖动 = 滑铲', expect: 'yes', got: hit(c, /^roll/) ? 'yes' : 'no', extra: c.join(' ') });
+  await reset();
+  await drag(150, 560, 250, 560);
+  c = await calls();
+  R.push({ name: '鼠标：向右拖动 = 变道', expect: 'moveLane:1', got: (c[0] || '(无)'), extra: '' });
+
+  /* 5.9 键盘：方向键 / WASD / 空格 */
+  const keyCase = async (key, label, re) => {
+    await reset();
+    await page.keyboard.press(key);
+    await page.waitForTimeout(60);
+    const cc = await calls();
+    return { name: '键盘：' + label, expect: 'yes', got: hit(cc, re) ? 'yes' : 'no', extra: cc.join(' ') };
+  };
+  R.push(await keyCase('ArrowUp', '↑ = 跳', /^jump/));
+  R.push(await keyCase('ArrowDown', '↓ = 滑铲', /^roll/));
+  R.push(await keyCase('ArrowLeft', '← = 左移', /^moveLane:-1$/));
+  R.push(await keyCase('ArrowRight', '→ = 右移', /^moveLane:1$/));
+  R.push(await keyCase('w', 'W = 跳', /^jump/));
+  R.push(await keyCase('s', 'S = 滑铲', /^roll/));
+  R.push(await keyCase('a', 'A = 左移', /^moveLane:-1$/));
+  R.push(await keyCase('d', 'D = 右移', /^moveLane:1$/));
+  R.push(await keyCase(' ', '空格 = 跳', /^jump/));
+
+  /* 5.10 屏幕按钮必须已经拆掉（用户明确要求"不要按钮，直接滑屏幕"） */
+  const pads = await page.evaluate(() => ['padLeft', 'padRight', 'padJump', 'padRoll']
+    .filter((id) => !!document.getElementById(id)));
+  R.push({ name: '屏上方向按钮已移除', expect: '0', got: String(pads.length), extra: pads.join(' ') });
+
+  /* 5.11 滑屏时指尖要有方向箭头反馈 */
+  await reset();
+  await swipe(195, 500, 195, 440);
+  const gfx = await page.evaluate(() => document.querySelectorAll('#gfx .gfx-item').length);
+  R.push({ name: '滑屏有方向箭头反馈', expect: '4', got: String(gfx), extra: '' });
+
+  /* 5.12 操作示意卡是图形，不是文字。
+         W/A/S/D 是键帽印字（标准图示），所以允许 4 个字符。 */
+  const howto = await page.evaluate(() => {
+    const h = document.getElementById('howto');
+    h.innerHTML = (typeof HOWTO_SVG !== 'undefined') ? HOWTO_SVG : '';
+    return {
+      svg: h.querySelectorAll('svg').length,
+      shapes: h.querySelectorAll('path,rect,circle').length,
+      text: h.textContent.replace(/\s+/g, '').length,
+    };
+  });
+  R.push({
+    name: '操作示意卡是纯图形', expect: 'yes',
+    got: (howto.svg === 1 && howto.shapes > 20 && howto.text <= 4) ? 'yes' : 'no',
+    extra: 'svg ' + howto.svg + ' / 图形 ' + howto.shapes + ' / 文字 ' + howto.text + ' 字',
+  });
+
   R.push({ name: '全程零原生弹窗', expect: '0', got: String(nativeDialog), extra: '' });
 
   let bad = 0;

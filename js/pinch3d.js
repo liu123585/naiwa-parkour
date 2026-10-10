@@ -303,13 +303,19 @@ const Pinch3D = {
       this.dynRoot.add(im);
       this._bb[d[0]] = { mesh: im, n: 0 };
     }
+    this._tmp();
+    return this._bb;
+  },
+  /* 实例矩阵 / 临时色复用的对象，box 与 inst 两套批次共用。
+     单独抽出来是因为 inst 批次可能先于 box 批次被首次调用到。 */
+  _tmp() {
+    if (this._m4) return;
     this._m4 = new THREE.Matrix4();
     this._q4 = new THREE.Quaternion();
     this._e3 = new THREE.Euler();
     this._p3 = new THREE.Vector3();
     this._s3 = new THREE.Vector3();
     this._c3 = new THREE.Color();
-    return this._bb;
   },
   boxReset() {
     const B = this.boxBatch();
@@ -326,6 +332,67 @@ const Pinch3D = {
         if (s.mesh.instanceColor) s.mesh.instanceColor.needsUpdate = true;
       }
     }
+  },
+
+  /* ---------------- 通用实例化批次（圆柱 / 球 / 圆锥 / 圆片） ----------------
+     和 boxBatch 是同一套思路，只是几何体不固定。
+     原来 tube / sphere / cone 全走 take-put 池子，一个物体就是一次 draw call：
+     一盏路灯的灯杆、一棵行道树的树干、屋顶的水箱和天线、路边道具的立柱，
+     一条可视距离里光圆柱就有四五十根，加上球体二十多个 —— 手机上每帧
+     要提交 170+ 次绘制调用，GPU 还没开始画，CPU 就先烧掉一大块帧时间。
+     这里按「几何体 + 着色方式」分组，每组一个 InstancedMesh，
+     颜色走 instanceColor（与 box 批次一致，材质底色留白）。
+     分组键里带 shade 是因为同一根圆柱有的用 flatShading、有的用平滑法线，
+     合成一批会改变受光外观 —— 那是看得出来的。 */
+  INSTCAP: 900,
+  instBatch(key, geo, shade) {
+    if (!this._ib) this._ib = {};
+    const k = key + '|' + shade;
+    let b = this._ib[k];
+    if (!b) {
+      let mat;
+      if (shade === 'unlit') mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      else mat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: shade === 'flat' });
+      const im = new THREE.InstancedMesh(geo, mat, this.INSTCAP);
+      if (THREE.DynamicDrawUsage !== undefined) im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.frustumCulled = false;          // 和 box 批次一样：自己按距离剔除
+      im.count = 0;
+      im.matrixAutoUpdate = false;
+      this.dynRoot.add(im);
+      b = this._ib[k] = { mesh: im, n: 0 };
+    }
+    return b;
+  },
+  instReset() {
+    if (!this._ib) return;
+    for (const k in this._ib) { this._ib[k].n = 0; this._ib[k].mesh.count = 0; }
+  },
+  instFlush() {
+    if (!this._ib) return;
+    for (const k in this._ib) {
+      const s = this._ib[k];
+      s.mesh.count = s.n;
+      if (s.n > 0) {
+        s.mesh.instanceMatrix.needsUpdate = true;
+        if (s.mesh.instanceColor) s.mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  },
+  /* 往批次里塞一件。不返回 mesh —— 实例化的东西没法在事后单独改。 */
+  inst(key, geo, x, y, z, sx, sy, sz, rx, ry, rz, color, shade) {
+    this._tmp();
+    const b = this.instBatch(key, geo, shade || 'flat');
+    const i = b.n;
+    if (i >= this.INSTCAP) return null;   // 到顶就丢，宁可少画也不崩
+    this._e3.set(rx || 0, ry || 0, rz || 0);
+    this._q4.setFromEuler(this._e3);
+    this._p3.set(x, y, z);
+    this._s3.set(sx === undefined ? 1 : sx, sy === undefined ? 1 : sy, sz === undefined ? 1 : sz);
+    this._m4.compose(this._p3, this._q4, this._s3);
+    b.mesh.setMatrixAt(i, this._m4);
+    b.mesh.setColorAt(i, this._c3.set(color));
+    b.n++;
+    return b.mesh;
   },
 
   /* 一个盒子（宽高深 + 可选绕各轴旋转） */
@@ -354,9 +421,19 @@ const Pinch3D = {
   tube(x, y, z, r, h, color, seg, opts) {
     opts = opts || {};
     const geo = seg === 8 ? this.g.cyl8 : this.g.cyl;
-    const m = this.take(geo, opts.unlit ? this.unlit(color, opts) : this.matte(color, opts));
-    this.put(m, x, y, z, r * 2, h, r * 2, opts.rx || 0, opts.ry || 0, opts.rz || 0);
-    return m;
+    /* 带透明度或特殊贴图的（全场只有霓虹灯那两三处）走池子，
+       其余全部进实例化批次 —— 见 instBatch 上面那段说明。 */
+    if (opts.opacity !== undefined || (opts.tex && opts.tex !== this.grainTex)) {
+      const m = this.take(geo, opts.unlit ? this.unlit(color, opts) : this.matte(color, opts));
+      this.put(m, x, y, z, r * 2, h, r * 2, opts.rx || 0, opts.ry || 0, opts.rz || 0);
+      return m;
+    }
+    /* shade 必须按原样复现 matte/unlit 的行为：
+       原来 matte() 里 flatShading 取的是 !!opts.flat，没传就是平滑法线，
+       混成一批会让灯杆/道具杆的受光变样。 */
+    const shade = opts.unlit ? 'unlit' : (opts.flat ? 'flat' : 'smooth');
+    return this.inst(seg === 8 ? 'cyl8' : 'cyl', geo, x, y, z, r * 2, h, r * 2,
+      opts.rx || 0, opts.ry || 0, opts.rz || 0, color, shade);
   },
 
   /* ---------------- 地上的软影 ----------------
@@ -452,9 +529,10 @@ const Pinch3D = {
       R.camera.aspect = Renderer.W / Math.max(1, Renderer.H);
       R.camera.updateProjectionMatrix();
 
-      /* 池与角色清空，盒子实例计数也归零 */
+      /* 池与角色清空，盒子 / 实例两个批次的计数也归零 */
       R.pool.used = 0;
       R.boxReset();
+      R.instReset();
       R.charRoot.clear();
 
       /* 相机。注意 x 取负：场景整体被 scale.x=-1 镜像过，
@@ -1165,6 +1243,7 @@ const Pinch3D = {
          车厢 / 障碍 / 金币 / 粒子是 drawSky 之后才发出来的（game.js render 里），
          早一步提交它们会被漏掉，整帧都画不出来。就在出图前一刻提交。 */
       R.boxFlush();
+      R.instFlush();
       R.renderer.render(R.scene, R.camera);
     },
 

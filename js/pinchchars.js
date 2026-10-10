@@ -591,11 +591,14 @@ function applyPose(rig, pose) {
 
   switch (st) {
     case 'jump':
-      rig.legL.rotation.x = -0.75; rig.legR.rotation.x = -0.35;
-      rig.armL.rotation.x = -2.05; rig.armR.rotation.x = -1.85;
-      rig.armL.rotation.z = -0.28; rig.armR.rotation.z = 0.28;
-      rig.core.rotation.x = -0.12;
-      rig.core.position.y = 0.03;
+      /* 跳跃要和滑铲拉开最大反差：人往上"抻长"、双臂举高、双腿收起。
+         滑铲是往下压扁，跳跃是往上拉长 —— 两个剪影在小屏上也不会认错。 */
+      rig.legL.rotation.x = -1.15; rig.legR.rotation.x = -0.55;
+      rig.armL.rotation.x = -2.55; rig.armR.rotation.x = -2.35;
+      rig.armL.rotation.z = -0.34; rig.armR.rotation.z = 0.34;
+      rig.core.rotation.x = -0.16;
+      rig.core.position.y = 0.05;
+      rig.core.scale.set(0.93, 1.12, 0.93);
       break;
 
     case 'fall':
@@ -606,12 +609,22 @@ function applyPose(rig, pose) {
       break;
 
     case 'roll':
-      // 整体向前翻滚：用 pose.t 连续转，但同样走步进
-      rig.tilt.rotation.x = -(pose.t || 0) * Math.PI * 2;
-      rig.legL.rotation.x = -1.1; rig.legR.rotation.x = -0.9;
-      rig.armL.rotation.x = -1.7; rig.armR.rotation.x = -1.7;
-      rig.core.position.y = 0.30;
-      rig.core.scale.set(1.02, 0.9, 1.02);
+      /* 滑铲，不是翻滚。
+         旧版这里是"整体向前翻一整圈"——在手机小屏上转得太快，
+         而且和跳跃（同样是往上离地）读起来几乎一样，
+         玩家根本分不清自己刚做的是哪个动作。
+         现在换成一秒能认出来的姿势：上半身压下去、前腿蹬直、
+         后腿收在身下、后手向后甩保持平衡，整个人贴地往前滑。 */
+      rig.tilt.rotation.x = -0.20 + Math.sin(ph * 3) * 0.02;
+      rig.core.rotation.x = -0.74;
+      rig.core.position.y = -0.04;
+      rig.core.scale.set(1.06, 0.90, 1.06);
+      rig.legL.rotation.x = -1.50;                 // 前腿蹬出去
+      rig.legR.rotation.x = 0.62;                  // 后腿收起来
+      rig.armL.rotation.x = -2.50;                 // 前手往前伸
+      rig.armR.rotation.x = 0.85;                  // 后手向后甩
+      rig.armL.rotation.z = -0.34;
+      rig.armR.rotation.z = 0.50;
       break;
 
     case 'crash':

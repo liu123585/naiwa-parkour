@@ -3,6 +3,95 @@
    ========================================================= */
 'use strict';
 
+/* ---------------- 图形素材（全部内联 SVG，不引外部文件） ----------------
+   这一版的所有"说明"都做成图，不写文字：
+     · GFX_SVG  —— 四个手势方向箭头，滑动时在指尖位置闪一下
+     · HOWTO_SVG —— 开局的操作示意卡：手指 + 箭头 + 三条道，
+                    看完就知道怎么玩，一个字都不用读 */
+
+/* 手势反馈箭头：粗描边 + 拖尾，颜色按动作区分
+   绿=跳（往上）、蓝=滑铲（往下）、黄=左右变道 */
+const GFX_SVG = {
+  left: '<svg viewBox="0 0 48 48"><path d="M14 24h22" class="g-trail"/><path d="M20 15 11 24l9 9" class="g-head"/></svg>',
+  right: '<svg viewBox="0 0 48 48"><path d="M34 24H12" class="g-trail"/><path d="M28 15l9 9-9 9" class="g-head"/></svg>',
+  jump: '<svg viewBox="0 0 48 48"><path d="M24 38V14" class="g-trail"/><path d="M15 20l9-9 9 9" class="g-head"/></svg>',
+  slide: '<svg viewBox="0 0 48 48"><path d="M24 10v24" class="g-trail"/><path d="M15 28l9 9 9-9" class="g-head"/><path d="M9 41h30" class="g-ground"/></svg>',
+};
+
+/* 开局示意：四格 2×2，全是粗线条大图形，没有任何说明文字。
+     ① 手指 + 四向箭头  → 手机上直接滑屏（上跳 / 下滑铲 / 左右变道）
+     ② 鼠标 + 四向箭头  → 电脑上按住拖动屏幕，动作完全一样
+     ③ 方向键（+ 形排布）→ 电脑上直接按方向键
+     ④ W A S D 键帽     → 电脑上也可以用 WASD
+   箭头刻意画得很粗、格子刻意做大：手机上这张卡只有三百多像素宽，
+   细线和小图在那个尺寸下等于没画。
+   ③④ 里的 W/A/S/D 是键帽上的印字，属于标准图示，不是说明文案。 */
+const HOWTO_SVG = `
+<svg viewBox="0 0 640 344" class="howto-svg">
+  <!-- ① 手指滑动 -->
+  <g class="hw hw1">
+    <rect x="6" y="6" width="310" height="160" rx="20" class="hw-bg"/>
+    <circle cx="161" cy="86" r="15" class="hw-finger"/>
+    <path d="M161 68 V34" class="hw-arrow" stroke="#8ce85a"/>
+    <path d="M146 50 L161 31 L176 50" class="hw-head" stroke="#8ce85a"/>
+    <path d="M161 104 V130" class="hw-arrow" stroke="#5cc4ff"/>
+    <path d="M146 114 L161 133 L176 114" class="hw-head" stroke="#5cc4ff"/>
+    <path d="M144 86 H88" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M104 71 L85 86 L104 101" class="hw-head" stroke="#ffd34d"/>
+    <path d="M178 86 H234" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M218 71 L237 86 L218 101" class="hw-head" stroke="#ffd34d"/>
+  </g>
+
+  <!-- ② 鼠标拖动 -->
+  <g class="hw hw2">
+    <rect x="324" y="6" width="310" height="160" rx="20" class="hw-bg"/>
+    <rect x="464" y="64" width="38" height="62" rx="19" class="hw-mouse"/>
+    <path d="M483 74 v16" class="hw-mouse-line"/>
+    <path d="M483 52 V30" class="hw-arrow" stroke="#8ce85a"/>
+    <path d="M470 44 L483 27 L496 44" class="hw-head" stroke="#8ce85a"/>
+    <path d="M483 138 V148" class="hw-arrow" stroke="#5cc4ff"/>
+    <path d="M470 136 L483 153 L496 136" class="hw-head" stroke="#5cc4ff"/>
+    <path d="M456 95 H414" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M430 80 L411 95 L430 110" class="hw-head" stroke="#ffd34d"/>
+    <path d="M510 95 H552" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M536 80 L555 95 L536 110" class="hw-head" stroke="#ffd34d"/>
+  </g>
+
+  <!-- ③ 方向键 -->
+  <g class="hw hw3">
+    <rect x="6" y="174" width="310" height="164" rx="20" class="hw-bg"/>
+    <rect x="140" y="212" width="42" height="42" rx="9" class="hw-key"/>
+    <path d="M161 246 V222" class="hw-arrow" stroke="#8ce85a"/>
+    <path d="M152 231 L161 219 L170 231" class="hw-head" stroke="#8ce85a"/>
+    <rect x="94" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <path d="M126 279 H104" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M113 270 L102 279 L113 288" class="hw-head" stroke="#ffd34d"/>
+    <rect x="140" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <path d="M161 292 V270" class="hw-arrow" stroke="#5cc4ff"/>
+    <path d="M152 280 L161 293 L170 280" class="hw-head" stroke="#5cc4ff"/>
+    <rect x="186" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <path d="M196 279 H218" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M209 270 L220 279 L209 288" class="hw-head" stroke="#ffd34d"/>
+  </g>
+
+  <!-- ④ WASD -->
+  <g class="hw hw4">
+    <rect x="324" y="174" width="310" height="164" rx="20" class="hw-bg"/>
+    <rect x="458" y="212" width="42" height="42" rx="9" class="hw-key"/>
+    <rect x="415" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <rect x="458" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <rect x="501" y="258" width="42" height="42" rx="9" class="hw-key"/>
+    <text class="hw-cap" x="479" y="240">W</text>
+    <text class="hw-cap" x="436" y="286">A</text>
+    <text class="hw-cap" x="479" y="286">S</text>
+    <text class="hw-cap" x="522" y="286">D</text>
+    <path d="M479 206 V190" class="hw-arrow" stroke="#8ce85a"/>
+    <path d="M470 199 L479 187 L488 199" class="hw-head" stroke="#8ce85a"/>
+    <path d="M479 322 V306" class="hw-arrow" stroke="#5cc4ff"/>
+    <path d="M470 311 L479 323 L488 311" class="hw-head" stroke="#5cc4ff"/>
+  </g>
+</svg>`;
+
 /* ---------------- 每日任务 ---------------- */
 const Missions = {
   _dirty: false,
@@ -89,7 +178,8 @@ const UI = {
       outfits: q('screenOutfits'), rank: q('screenRank'), join: q('screenJoin'),
       hero: q('heroCanvas'), menuBest: q('menuBest'), menuCoins: q('menuCoins'), menuTotal: q('menuTotal'),
       charsBody: q('charsBody'), charsCoins: q('charsCoins'), missionsBody: q('missionsBody'), missionCoins: q('missionCoins'),
-      boot: q('boot'), countdown: q('countdown'), menuTip: q('menuTip'), pad: document.querySelector('.pad'),
+      boot: q('boot'), countdown: q('countdown'), menuTip: q('menuTip'),
+      gfx: q('gfx'), howto: q('howto'),
       pauseScore: q('pauseScore'), pauseCoins: q('pauseCoins'), pauseDist: q('pauseDist'),
       overTitle: q('overTitle'), overQuote: q('overQuote'), overScore: q('overScore'), overBestTag: q('overBestTag'),
       overDist: q('overDist'), overCoins: q('overCoins'), overBest: q('overBest'), overCombo: q('overCombo'),
@@ -103,10 +193,53 @@ const UI = {
     this.buildMissions();
     this.buildSettings();
     setTimeout(() => { this.el.boot.classList.add('hide'); setTimeout(() => this.el.boot.classList.add('hidden'), 500); }, 520);
-    if (this.isTouch()) this.el.pad.classList.add('show');
   },
 
   isTouch() { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; },
+
+  /* ---------------- 手势反馈 ----------------
+     手指（或鼠标）划到哪，就在那个位置闪一个方向箭头。
+     这是"跟手"体感的一半：动作出来的同一帧就有画面回应，
+     玩家才敢相信"我一划它就动了"。
+     四个元素循环复用，不新建 DOM，避免连甩的时候触发 GC。 */
+  _gfxPool: null,
+  _gfxIdx: 0,
+  flashGesture(kind, x, y) {
+    const host = this.el.gfx;
+    if (!host || !kind) return;
+    if (!this._gfxPool) {
+      this._gfxPool = {};
+      for (const k of ['left', 'right', 'jump', 'slide']) {
+        const d = document.createElement('div');
+        d.className = 'gfx-item gfx-' + k;
+        d.innerHTML = GFX_SVG[k];
+        host.appendChild(d);
+        this._gfxPool[k] = { el: d, busy: false };
+      }
+    }
+    const slot = this._gfxPool[kind];
+    if (!slot) return;
+    /* 位置：有坐标就贴到手指上，没有（键盘触发）就落在屏幕中下方 */
+    const r = host.getBoundingClientRect();
+    const px = (x == null) ? r.width * 0.5 : x - r.left;
+    const py = (y == null) ? r.height * 0.66 : y - r.top;
+    slot.el.style.left = px + 'px';
+    slot.el.style.top = py + 'px';
+    slot.el.classList.remove('pop');
+    void slot.el.offsetWidth;              // 强制重排，动画才能重放
+    slot.el.classList.add('pop');
+  },
+
+  /* 开局操作示意：纯图形，不写一句说明 */
+  showHowto() {
+    const h = this.el.howto;
+    if (!h) return;
+    h.innerHTML = HOWTO_SVG;
+    h.classList.remove('hidden');
+    clearTimeout(this._howtoTimer);
+    this._howtoTimer = setTimeout(() => h.classList.add('hidden'), 4200);
+  },
+  hideHowto() { if (this.el.howto) this.el.howto.classList.add('hidden'); },
 
   /* ---------------- 屏幕切换 ---------------- */
   hideAllScreens() {
@@ -583,6 +716,9 @@ const UI = {
        即便存档里选着 file，也要如实显示成八音盒，别骗玩家。 */
     const src = (typeof Sound !== 'undefined' && Sound.activeSrc) ? Sound.activeSrc() : 'synth';
     document.querySelectorAll('#setMusicSrc button').forEach(b => b.classList.toggle('on', b.dataset.ms === src));
+    /* 操作示意卡：设置里常驻一份图形版，随时能对着看，不用读文字 */
+    const card = document.getElementById('howtoCard');
+    if (card && !card.firstChild) card.innerHTML = HOWTO_SVG;
   },
 
   refreshCoins() {
