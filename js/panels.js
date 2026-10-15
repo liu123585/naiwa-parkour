@@ -204,12 +204,6 @@ const Panels = {
         for (let i = 0; i < 4; i++) box(14 + i * 20, 46, 10, 12, '#e6423c', 2);
         box(16, 40, 6, 26, '#b9b3a6'); box(78, 40, 6, 26, '#b9b3a6');
         break;
-      case 'cone':
-        c.fillStyle = '#ff7a1a';
-        c.beginPath(); c.moveTo(50 * u, 24 * u); c.lineTo(70 * u, 78 * u); c.lineTo(30 * u, 78 * u); c.closePath(); c.fill();
-        box(22, 76, 56, 8, '#e2620f', 3);
-        box(34, 50, 32, 7, '#fff', 2);
-        break;
       case 'dumpster':
         box(18, 34, 64, 40, '#4f8a4a', 6);
         box(14, 28, 72, 10, '#3f7440', 4);

@@ -392,6 +392,9 @@ const UI = {
     if (pw.shield > 0) items.push(['shield', '护盾', pw.shield / g.powerDur('shield')]);
     if (pw.dash > 0) items.push(['dash', '无敌冲刺', pw.dash / g.powerDur('dash')]);
     if (pw.slow > 0) items.push(['slow', '时间减速', pw.slow / g.powerDur('slow')]);
+    if (pw.dbljump > 0) items.push(['dbljump', '二段跳', pw.dbljump / g.powerDur('dbljump')]);
+    if (pw.freeze > 0) items.push(['freeze', '时间冻结', pw.freeze / g.powerDur('freeze')]);
+    /* 金币雨是瞬发道具（吃到当场爆金币），不需要在道具条上占格子 */
     const key = items.map(i => i[0]).join(',');
     if (key !== this._powerKey) {
       this._powerKey = key;

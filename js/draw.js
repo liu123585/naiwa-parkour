@@ -176,6 +176,9 @@ const Renderer = {
       shield: { col: '#17c9c0', col2: '#a6f6f0' },
       dash: { col: '#ff2d5e', col2: '#ffb3c4' },
       slow: { col: '#7f5bff', col2: '#c9b8ff' },
+      dbljump: { col: '#3ecd8f', col2: '#b6f7dc' },
+      rain: { col: '#f0a90a', col2: '#ffe89a' },
+      freeze: { col: '#3fb0ea', col2: '#c9f2ff' },
     };
     for (const k in powers) {
       const p = powers[k];
@@ -225,6 +228,44 @@ const Renderer = {
           c.closePath(); c.fill();
           c.fillStyle = '#0e5c66';
           c.fillRect(-3, -11, 6, 20); c.fillRect(-9, -4, 18, 6);
+        } else if (k === 'dash') {
+          /* 闪电（之前 dash/slow 没有自己的分支，落到 else 分支被画成 "x2" 字样，
+             盘是红的、字是 x2 —— 一眼假。补上各自图形） */
+          c.fillStyle = '#fff';
+          c.beginPath();
+          c.moveTo(9, -26); c.lineTo(-15, 4); c.lineTo(-1, 4);
+          c.lineTo(-9, 26); c.lineTo(16, -6); c.lineTo(1, -6);
+          c.closePath(); c.fill();
+        } else if (k === 'slow') {
+          /* 时钟 */
+          c.strokeStyle = '#fff'; c.lineWidth = 5; c.lineCap = 'round';
+          c.beginPath(); c.arc(0, 1, 19, 0, Math.PI * 2); c.stroke();
+          c.beginPath(); c.moveTo(0, -9); c.lineTo(0, 2); c.lineTo(12, 8); c.stroke();
+        } else if (k === 'dbljump') {
+          /* 双层上箭头：一眼看出"还能再蹬一脚" */
+          c.fillStyle = '#fff';
+          for (let a = 0; a < 2; a++) {
+            const oy = a === 0 ? -17 : 0;
+            c.beginPath();
+            c.moveTo(0, oy - 15); c.lineTo(18, oy + 1); c.lineTo(7, oy + 1);
+            c.lineTo(7, oy + 12); c.lineTo(-7, oy + 12); c.lineTo(-7, oy + 1);
+            c.lineTo(-18, oy + 1); c.closePath(); c.fill();
+          }
+        } else if (k === 'rain') {
+          /* 三枚下落金币 */
+          c.fillStyle = '#fff';
+          const pts = [[-14, -15, 9], [13, -5, 8], [-3, 14, 10]];
+          for (const q of pts) { c.beginPath(); c.arc(q[0], q[1], q[2], 0, Math.PI * 2); c.fill(); }
+        } else if (k === 'freeze') {
+          /* 六角雪花 */
+          c.strokeStyle = '#fff'; c.lineWidth = 5; c.lineCap = 'round';
+          for (let i = 0; i < 3; i++) {
+            const a = i * Math.PI / 3;
+            c.beginPath();
+            c.moveTo(-Math.cos(a) * 22, -Math.sin(a) * 22);
+            c.lineTo(Math.cos(a) * 22, Math.sin(a) * 22);
+            c.stroke();
+          }
         } else {
           c.font = 'bold 38px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
           c.fillStyle = '#5a3d00'; c.fillText('x2', 0, 2);
@@ -827,23 +868,6 @@ const Renderer = {
         }
         this.fillQuad([mix(A, D, 0), mix(B, C, 0), mix(B, C, 0.12), mix(A, D, 0.12)], 'rgba(0,0,0,.25)');
       }
-    } else if (o.type === 'cone') {
-      /* 交通锥：和 3D 那套保持同一套比例（1.02 米高、0.84 宽 + 两道自发光白带），
-         以前 0.62 米高、橘色压在土黄道床上，远处根本认不出来。 */
-      const p = this.proj(o.x, 0, o.z);
-      if (!p) return;
-      const h = 1.02 * p.s, w = 0.84 * p.s;
-      c.fillStyle = 'rgba(0,0,0,.28)';
-      c.beginPath(); c.ellipse(p.sx, p.sy, w * 0.60, w * 0.20, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#a8380a';
-      c.fillRect(p.sx - w * 0.57, p.sy - h * 0.09, w * 1.14, h * 0.09);
-      c.fillStyle = '#ff6a10';
-      c.beginPath(); c.moveTo(p.sx, p.sy - h); c.lineTo(p.sx + w / 2, p.sy - h * 0.09); c.lineTo(p.sx - w / 2, p.sy - h * 0.09); c.closePath(); c.fill();
-      c.fillStyle = '#fdfcf7';
-      c.fillRect(p.sx - w * 0.36, p.sy - h * 0.46, w * 0.72, h * 0.15);
-      c.fillRect(p.sx - w * 0.26, p.sy - h * 0.69, w * 0.52, h * 0.12);
-      c.fillStyle = '#ffd34d';
-      c.fillRect(p.sx - w * 0.09, p.sy - h * 0.99, w * 0.18, h * 0.13);
     } else if (o.type === 'spring') {
       const F = this.boxFaces({ x0: o.x - 0.85, x1: o.x + 0.85, y0: 0, y1: 0.42, z0: o.z, z1: o.z + 1.1 });
       if (!F) return;

@@ -58,7 +58,7 @@ const CFG = {
   LANE_SNAP: 12.5,        // 变道横向速度
   BOOST_BOARD_SAVE: 1.6,  // 悬浮板碎掉后的无敌时间
 
-  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30, shield: 11, dash: 4.5, slow: 6 },
+  POWER_TIME: { magnet: 13, jet: 9, x2: 16, shoe: 13, board: 30, shield: 11, dash: 4.5, slow: 6, dbljump: 16, rain: 0.5, freeze: 5.5 },
 
   COIN_VALUE: 1,
   SCORE_PER_M: 1.0,
@@ -213,17 +213,22 @@ function skillCost(s, lv) { return Math.round(s.base * Math.pow(1.85, lv)); }
 /* ---------------- 道具 ----------------
    kind: 生成器里出现的概率权重 */
 /* 道具与参考游戏保持一致：只有「红色磁铁」与「蓝色护盾」两种 */
-/* 道具掉落表：生成器用 Utils.pick(POWERS) 等概率抽取；
-   六种效果引擎里都已实现（见 game.js 的 this.powers），weight 字段留给后续做加权。 */
+/* 道具掉落表：生成器用 Game.rollPower() 按 weight 加权抽取。
+   十一种效果引擎里都已实现（见 game.js 的 this.powers）。
+   weight 越大越常见 —— 顺手好用的（磁铁/双倍/护盾）给高权重，
+   改变玩法手感的强力道具（冻结/金币雨）给低权重，抽到才稀有。 */
 const POWERS = [
-  { id: 'jet',    name: '喷射背包', color: '#4f9dff', weight: 30 },
-  { id: 'magnet', name: '金币磁铁', color: '#e6423c', weight: 38 },
-  { id: 'x2',     name: '双倍金币', color: '#f5b21a', weight: 36 },
-  { id: 'shoe',   name: '超级跑鞋', color: '#7cd44a', weight: 34 },
-  { id: 'board',  name: '悬浮板',   color: '#ff5fa2', weight: 22 },
-  { id: 'shield', name: '护盾',     color: '#2ee6d6', weight: 34 },
-  { id: 'dash',   name: '无敌冲刺', color: '#ff3d6e', weight: 26 },
-  { id: 'slow',   name: '时间减速', color: '#9b7bff', weight: 24 },
+  { id: 'magnet',  name: '金币磁铁', color: '#e6423c', weight: 42 },
+  { id: 'x2',      name: '双倍金币', color: '#f5b21a', weight: 40 },
+  { id: 'shield',  name: '护盾',     color: '#2ee6d6', weight: 36 },
+  { id: 'shoe',    name: '超级跑鞋', color: '#7cd44a', weight: 34 },
+  { id: 'jet',     name: '喷射背包', color: '#4f9dff', weight: 30 },
+  { id: 'dash',    name: '无敌冲刺', color: '#ff3d6e', weight: 26 },
+  { id: 'slow',    name: '时间减速', color: '#9b7bff', weight: 24 },
+  { id: 'board',   name: '悬浮板',   color: '#ff5fa2', weight: 24 },
+  { id: 'dbljump', name: '二段跳',   color: '#5ee0a8', weight: 30 },
+  { id: 'rain',    name: '金币雨',   color: '#ffc93c', weight: 22 },
+  { id: 'freeze',  name: '时间冻结', color: '#7fd4ff', weight: 16 },
 ];
 
 /* ---------------- 任务池 ---------------- */

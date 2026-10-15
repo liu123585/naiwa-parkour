@@ -90,14 +90,15 @@ const Game = {
     this.hitStop = 0; this.bounce = 0;
     this.nearMissCd = 0; this.coinSndCd = 0;
     this.reviveUsed = 0; this.springs = 0;
-    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0, dash: 0, slow: 0 };
+    this.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0, dash: 0, slow: 0, dbljump: 0, freeze: 0, rain: 0 };
     this.player = {
       x: 0, y: 0, vy: 0, lane: 1, state: 'run', phase: 0,
       rollT: 0, grounded: true, supportY: 0, squash: 0, lean: 0, boardT: 0,
+      dblUsed: false,          // 二段跳：这一跳空中已经用掉了吗
     };
     this.camera.x = 0; this.camera.shake = 0;
     this.runStats = { coins: 0, jumps: 0, rolls: 0, roofs: 0, boardDist: 0, magnet: 0, jet: 0, boards: 0, best: 0, near: 0, powers: 0, hits: 0 };
-    this.chase = { hits: 0, grace: 0, active: false };     // 第一次撞击引来追兵，7 秒内再撞被抓
+    this.chase = { hits: 0, grace: 0, active: false };     // 第一次撞击引来追兵，10 秒内再撞被抓
     this.themeTimer = 26;
     const base = (this.mapDef && this.mapDef.forceNight) ? THEMES.night : THEMES.day;
     this.themeFrom = this.themeTo = this.theme = base;
@@ -111,7 +112,7 @@ const Game = {
     this.state = 'run';
     // 角色自带的"开局道具"（见 CHARS 里的 starter 标记）
     const ch = this.charDef();
-    if (ch && ch.p.starter) this.grantPower(Utils.pick(POWERS).id, true);
+    if (ch && ch.p.starter) this.grantPower(Game.rollPower(), true);
     // 悬浮板库存
     UI.hideAllScreens();
     UI.showHUD();
@@ -258,7 +259,11 @@ const Game = {
     let target = Math.min(D.speedMax, D.speedStart + this.elapsed * D.accel + this.travel * 0.0011);
     if (jetOn) target = Math.max(target, CFG.SPEED_JET);
     if (this.powers.dash > 0) target *= 1.32;      // 无敌冲刺：跑得更快
-    if (this.powers.slow > 0) target *= 0.60;      // 时间减速：世界变慢，好躲
+    /* 时间类道具：冻结（0.28 倍）比减速（0.60 倍）更极端。
+       两个同时吃到时以冻结为准，不做叠乘 —— 否则 0.17 倍速会让画面近乎静止，
+       手感变成"卡住了"而不是"我变强了"。 */
+    if (this.powers.freeze > 0) target *= 0.28;
+    else if (this.powers.slow > 0) target *= 0.60;
     this.speed = jetOn ? Utils.lerp(this.speed, target, 1 - Math.pow(0.05, dt))
       : Utils.lerp(this.speed, target, 1 - Math.pow(0.35, dt));
     this.travel += this.speed * dt;
@@ -351,6 +356,7 @@ const Game = {
       if (p.y <= support && p.vy <= 0) {
         if (!p.grounded && p.vy < -6) { this.landFx(); }
         p.y = support; p.vy = 0; p.grounded = true; p.squash = Math.min(1, Math.abs(p.vy) / 14 + 0.25);
+        p.dblUsed = false;                 // 落地就把二段跳还给你
         if (p.rollT > 0) p.state = 'roll'; else p.state = 'run';
       } else {
         p.grounded = false;
@@ -439,7 +445,7 @@ const Game = {
     if (this.themeT < 1) this.themeT = Math.min(1, this.themeT + dt / 2.4);
     this.theme = (typeof World !== 'undefined') ? World.applyMap(cycle, this.mapDef) : cycle;
 
-    /* ---- 追逐容错倒计时（高仿：7 秒内再次撞击就被抓） ---- */
+    /* ---- 追逐容错倒计时（高仿：10 秒内再次撞击就被抓） ---- */
     const cs = this.chase;
     if (cs && cs.active) {
       cs.grace -= dt;
@@ -495,11 +501,19 @@ const Game = {
   jump() {
     if (this.state !== 'run' || this.dying > 0) return;
     const p = this.player;
-    if (!p.grounded && !(this.powers.jet > 0)) return;
+    /* 空中还想再蹬一脚 → 只有吃到「二段跳」才行，且一次滞空只能用一次。
+       这一条是给"跳不上车顶"专门开的门：吃到道具就能直接踩上矮/中车厢顶。 */
+    const airJump = !p.grounded && this.powers.dbljump > 0 && !p.dblUsed;
+    if (!p.grounded && !(this.powers.jet > 0) && !airJump) return;
+    if (airJump) p.dblUsed = true;
     if (p.rollT > 0) p.rollT = 0;
     const ch = this.charDef();
     let v = CFG.JUMP_V * (1 + (ch && ch.p.jump ? ch.p.jump : 0));
     if (this.powers.shoe > 0) v = CFG.JUMP_V_SHOE * (1 + (ch && ch.p.jump ? ch.p.jump : 0));
+    /* 二段跳的初速 11.2 → 空中再来一段 2.0 米余量。
+       从首跳顶点（1.68 米）蹬出 ≈ 3.7 米，正好够矮车厢（2.6）和中车厢（3.3）、
+       但够不到高车厢（4.0）—— 保住了"高车厢只能变道"这条设计线。 */
+    if (airJump) v = Math.max(v, 11.2);
     p.vy = v;
     p.grounded = false;
     p.state = 'jump';
@@ -560,20 +574,52 @@ const Game = {
   },
 
   powerDur(kind) {
-    const table = { magnet: 1.6, jet: 0.9, shoe: 1.2, board: 3, dash: 0.8, slow: 0.7 };
+    const table = { magnet: 1.6, jet: 0.9, shoe: 1.2, board: 3, dash: 0.8, slow: 0.7, dbljump: 1.5, freeze: 0.6 };
     let t = CFG.POWER_TIME[kind] + (Store.data.skills[kind] || 0) * (table[kind] || 0);
     const ch = this.charDef();
     if (ch && ch.p[kind]) t *= (1 + ch.p[kind]);
     return t;
   },
+  /* 按 weight 加权抽一个道具。
+     老版是 Utils.pick(POWERS) 等概率 —— 11 种道具平分，抽到想要的那种
+     就只有 1/11。现在常见的（磁铁/双倍/护盾）权重高、强力稀有道具
+     （金币雨/时间冻结）权重低，抽卡手感更像回事。 */
+  rollPower(exclude) {
+    let total = 0;
+    for (const p of POWERS) { if (p.id === exclude) continue; total += (p.weight || 1); }
+    let r = Math.random() * total;
+    for (const p of POWERS) {
+      if (p.id === exclude) continue;
+      r -= (p.weight || 1);
+      if (r <= 0) return p.id;
+    }
+    return 'magnet';
+  },
+  /* 金币雨：拾取瞬间在正前方铺一片拱形金币墙 —— 即时到手的爽感，
+     也顺手补一口金币。排数刻意压在 14 以内：每个金币是独立的网格 +
+     地面投影，几十个一起放会实打实拖慢手机。 */
+  rainCoins() {
+    const rows = 12;
+    for (let i = 0; i < rows; i++) {
+      const z = this.travel + 11 + i * 1.55;
+      const arc = 0.85 + Math.sin((i / (rows - 1)) * Math.PI) * 1.35;
+      for (let l = 0; l < 3; l++) {
+        if (Math.random() < 0.18) continue;            // 留点缺口，别像一堵实心墙
+        this.addCoin(z, Utils.laneX(l), arc);
+      }
+    }
+  },
   grantPower(kind, silent) {
     const idx = POWERS.findIndex(x => x.id === kind);
     const info = POWERS[idx] || POWERS[0];
     if (kind === 'board') { this.startBoard(); }
+    else if (kind === 'rain') { this.rainCoins(); }      // 金币雨：瞬发，不占 HUD 格子
     else {
       this.powers[kind] = Math.max(this.powers[kind], this.powerDur(kind));
       /* 无敌冲刺：期间撞上障碍直接撞碎（复用 invuln 的撞碎逻辑） */
       if (kind === 'dash') this.invuln = Math.max(this.invuln, this.powers.dash);
+      /* 二段跳：给的时候顺手把空中那一跳还给你，别出现"吃到了却已经落地了"的空窗 */
+      if (kind === 'dbljump') this.player.dblUsed = false;
     }
     Store.data.powerUses++;
     if (this.runStats) this.runStats.powers = (this.runStats.powers || 0) + 1;
@@ -589,6 +635,8 @@ const Game = {
     if (kind === 'jet') UI.toast('喷射结束');
     else if (kind === 'dash') UI.toast('冲刺结束');
     else if (kind === 'slow') UI.toast('时间恢复正常');
+    else if (kind === 'freeze') UI.toast('时间恢复正常');
+    else if (kind === 'dbljump') UI.toast('二段跳结束');
   },
 
   /* ================= 磁铁 ================= */
@@ -790,12 +838,15 @@ const Game = {
        菜单提示里写过"悬浮板能替你挡一次撞击"，但 breakBoard(true) 这条保命路径
        之前从来没被调用过——板子只是会自然到期，撞了照样死。这里补上。 */
     if (p.boardT > 0) { this.breakBoard(false); return; }
-    /* 高仿失败机制：第一次撞击引来追兵，7 秒内再次撞击就被抓住。
+    /* 高仿失败机制：第一次撞击引来追兵，10 秒内再次撞击就被抓住。
        但**撞车厢没有第二次机会**——地铁跑酷里正面撞火车就是当场结束，
-       所以这里把 train 单独拎出来当致命伤。 */
+       所以这里把 train 单独拎出来当致命伤。
+       例外：简单难度（trainForgive）连车厢也算一次失误 —— 反馈"太难了"
+       之后给新手的台阶，不然撞车厢 = 秒死，挫败感全堆在这儿。 */
     const cs = this.chase || (this.chase = { hits: 0, grace: 0, active: false });
-    if (o.kind !== 'train' && cs.hits === 0) {
-      cs.hits = 1; cs.grace = 7; cs.active = true;
+    const trainFatal = (o.kind === 'train') && !(this.diff && this.diff.trainForgive);
+    if (!trainFatal && cs.hits === 0) {
+      cs.hits = 1; cs.grace = 10; cs.active = true;
       this.chaser.on = true; this.chaser.mode = 'chase'; this.chaser.dist = 3.4;
       this.invuln = Math.max(this.invuln, 1.5);
       this.speed *= 0.45;                    // 踉跄一下：撞了要掉速，不然完全没有撞感
@@ -803,7 +854,7 @@ const Game = {
       this.hurtFlash = 0.8; this.shake = 1.3;
       this.runStats.hits++;
       Sound.crash();
-      UI.toast('检票员追上来了！7 秒内别再撞');
+      UI.toast('检票员追上来了！10 秒内别再撞');
       if (Store.data.settings.vibe && navigator.vibrate) navigator.vibrate([30, 40]);
       return;
     }
@@ -935,10 +986,10 @@ const Game = {
   /* ================= 关卡生成 ================= */
   genNext() {
     const z = this.nextZ;
-    /* 难度曲线从 2600 米收到 1900 米。老曲线太慢：跑了一分多钟，
-       地图还是"一段障碍 + 一段空"的节奏，玩家根本感觉不到在变难。
-       提前把复杂段落放出来，才有"越跑越吃紧"的体感。 */
-    const d = Utils.clamp(this.travel / 1900, 0, 1);
+    /* 难度曲线：2600 → 1900 → 3200 米。
+       1900 那一版收得太狠 —— 反馈"现在这个太难了"。改成 3200 米才爬到满难度，
+       也就是跑到约 5 分钟后才吃满后面那套复杂段落，前面大半程都在舒服区。 */
+    const d = Utils.clamp(this.travel / 3200, 0, 1);
     const G = Gen;
     G.pruneReserved(this.travel);
     /* 候选集只筛一次：窗口 [z-3, z+150]。
@@ -950,6 +1001,12 @@ const Game = {
     do {
       G.z = z;
       G.diff = d;
+      /* 障碍密度系数：直接来自难度档位（easy/normal/hard）。
+         以前这个参数只写在难度表里、生成器根本没读过 —— 三档的障碍密度
+         实际上完全一样，所谓"简单"只是速度慢一点。现在真正生效：
+         系数只作用在"会挡路的"段落上，金币段 / 道具段 / 装饰段不受影响，
+         所以调低它等于"多给喘息和补给"，而不是"整局变空"。 */
+      G.rate = (this.diff && this.diff.obstacleRate != null) ? this.diff.obstacleRate : 1;
       const mark = this.objs.length;
       const rmark = G.reserved.length;
       G.pickPattern(d);
@@ -980,9 +1037,10 @@ const Game = {
     } while (!ok && guard < 8);
     /* 八次都抽不出合法段落：宁可空一段，也不能把死局放出去 */
     if (!ok) G.z = z + 14;
-    /* 段落间距随难度收一点：早期松、后期紧，给玩家喘气的时间越来越少。
-       但保底 4 米 —— 再小两个段落就会叠在一起，变成没得选的必死局。 */
-    this.nextZ = G.z + Utils.rand(4, 12 - d * 3);
+    /* 段落间距：老版 rand(4, 12-d*3) 到后期只剩 4~9 米，
+       两个复杂段落几乎贴在一起，反馈"太难了"有它一份。
+       现在放宽到 rand(7, 17-d*2)，保底 7 米够跑完一次完整的"看清 → 决策 → 动"。 */
+    this.nextZ = G.z + Utils.rand(7, 17 - d * 2);
   },
 
   addCoin(worldZ, x, y) {
@@ -1007,7 +1065,8 @@ const Game = {
          以前 y1 只有 2.55、而画面上那根横杆挂在 1.72 米处，看着像能跨，
          玩家一跳发现过不去，就会觉得"碰撞没做"（反馈原话就是这个意思）。 */
       highbar: { hw: 1.15, len: 0.42, y0: 1.30, y1: 3.20 },
-      cone: { hw: 0.50, len: 0.58, y0: 0, y1: 1.02 },
+      /* 交通锥（cone）已按反馈整体删除 —— 3D/2D 绘制、图鉴条目、生成器
+         里的引用全部同步清掉，这行碰撞盒也不例外。 */
       spring: { hw: 0.85, len: 1.1, y0: 0, y1: 0.42, spring: true },
       /* ---- 新增障碍 ---- */
       tunnel: { hw: 1.18, len: 3.0, y0: 1.26, y1: 3.10 },                       // 限高隧道：必须滑铲
@@ -1056,7 +1115,7 @@ const Game = {
    关卡段落生成器
    ========================================================= */
 const Gen = {
-  z: 0, diff: 0,
+  z: 0, diff: 0, rate: 1,
   laneX: (l) => Utils.laneX(l),
 
   /* ---------------------------------------------------------
@@ -1174,19 +1233,22 @@ const Gen = {
 
   /* 每条段落都必须保证至少一条车道可通过 */
   patterns: [
-    { id: 'coinLine', w: () => 12, fn: (G) => {
+    { id: 'coinLine', w: () => 18, noHazard: true, fn: (G) => {
       const lane = Utils.irand(0, 2), n = Utils.irand(6, 10);
       for (let i = 0; i < n; i++) Game.addCoin(G.z + i * 2.1, G.laneX(lane), 0.85);
-      G.z += n * 2.1 + 7;
+      /* 金币段末尾挂一个道具：纯福利段落，顺手把"道具太少"补齐 */
+      if (Math.random() < 0.7) Game.addPower(G.z + n * 2.1 + 1.6, G.laneX(lane), 1.15, Game.rollPower());
+      G.z += n * 2.1 + 9;
     } },
-    { id: 'coinArc', w: () => 10, fn: (G) => {
+    { id: 'coinArc', w: () => 16, noHazard: true, fn: (G) => {
       const lane = Utils.irand(0, 2), n = 8;
       for (let i = 0; i < n; i++) Game.addCoin(G.z + i * 2.0, G.laneX(lane), 0.9 + Math.sin(i / (n - 1) * Math.PI) * 1.7);
-      G.z += n * 2.0 + 7;
+      if (Math.random() < 0.65) Game.addPower(G.z + n * 2.0 + 1.6, G.laneX(lane), 1.5, Game.rollPower());
+      G.z += n * 2.0 + 9;
     } },
     { id: 'barrier', w: () => 12, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      Game.addObstacle(Utils.pick(['barrier', 'barrier', 'cone', 'dumpster']), lane, { worldZ: G.z });
+      Game.addObstacle(Utils.pick(['barrier', 'barrier', 'dumpster']), lane, { worldZ: G.z });
       const other = (lane + 1) % 3;
       for (let i = 0; i < 4; i++) Game.addCoin(G.z + i * 2.0, G.laneX(other), 0.85);
       G.z += 12;
@@ -1196,7 +1258,7 @@ const Gen = {
       const free = Utils.irand(0, 2);
       for (let l = 0; l < 3; l++) {
         if (l === free) continue;
-        Game.addObstacle(Utils.pick(['barrier', 'dumpster', 'cone']), l, { worldZ: G.z + Utils.rand(-0.4, 0.4) });
+        Game.addObstacle(Utils.pick(['barrier', 'dumpster']), l, { worldZ: G.z + Utils.rand(-0.4, 0.4) });
       }
       for (let i = 0; i < 5; i++) Game.addCoin(G.z + i * 2.2, G.laneX(free), 0.85);
       G.z += 15;
@@ -1250,11 +1312,15 @@ const Gen = {
       for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + GAP + 3 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.mid + 0.55);
       G.z += GAP + len + 14;
     } },
-    { id: 'coneLine', w: () => 7, fn: (G) => {
-      const lane = Utils.irand(0, 2), n = Utils.irand(3, 6);
-      for (let i = 0; i < n; i++) Game.addObstacle('cone', lane, { worldZ: G.z + i * 3.2 });
-      if (Math.random() < 0.6) Game.addObstacle('barrier', (lane + 1) % 3, { worldZ: G.z + 4 });
-      G.z += n * 3.2 + 8;
+    /* 道具走廊：一串道具摆成一条线，让你一次吃个够。
+       原来的 coneLine（一串交通锥）已经随交通锥一起删掉了，这个位置改成
+       纯福利段落 —— 反馈"道具太少了"最直接的一刀。 */
+    { id: 'powerLine', w: () => 17, noHazard: true, fn: (G) => {
+      const lane = Utils.irand(0, 2), n = Utils.irand(2, 4);
+      for (let i = 0; i < n; i++) Game.addPower(G.z + i * 3.0, G.laneX(lane), 1.15, Game.rollPower());
+      const other = (lane + 1) % 3;
+      for (let i = 0; i < 6; i++) Game.addCoin(G.z + i * 2.0, G.laneX(other), 0.85);
+      G.z += n * 3.0 + 10;
     } },
     /* 迎面列车：从远处朝玩家冲过来，必须提前变道。
        老版门槛是 diffGuess > 0.12（要跑够约 312 米才开始出现）、权重只有 10，
@@ -1284,13 +1350,13 @@ const Gen = {
     } },
     { id: 'reward', w: () => 6, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      Game.addPower(G.z, G.laneX(lane), 1.15, Utils.pick(POWERS).id);
+      Game.addPower(G.z, G.laneX(lane), 1.15, Game.rollPower());
       for (let i = 0; i < 6; i++) Game.addCoin(G.z + 4 + i * 2.1, G.laneX(lane), 0.9);
       G.z += 20;
     } },
     { id: 'powerPair', w: () => 5, fn: (G) => {
-      Game.addPower(G.z, G.laneX(Utils.irand(0, 2)), 1.15, Utils.pick(POWERS).id);
-      Game.addPower(G.z + 26, G.laneX(Utils.irand(0, 2)), 1.15, Utils.pick(POWERS).id);
+      Game.addPower(G.z, G.laneX(Utils.irand(0, 2)), 1.15, Game.rollPower());
+      Game.addPower(G.z + 26, G.laneX(Utils.irand(0, 2)), 1.15, Game.rollPower());
       G.z += 34;
     } },
     { id: 'roofLong', w: () => 8, fn: (G) => {
@@ -1298,7 +1364,7 @@ const Gen = {
       Game.addTrain(G.z, lane, len, CFG.TRAIN_H.low);
       Game.addObstacle('spring', (lane + 2) % 3, { worldZ: G.z - 4, spring: true, launch: 13.5 });
       for (let i = 0; i < Math.floor(len / 2.2); i++) Game.addCoin(G.z + 3 + i * 2.2, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
-      Game.addPower(G.z + len * 0.6, G.laneX(lane), CFG.TRAIN_H.low + 1.0, Utils.pick(POWERS).id);
+      Game.addPower(G.z + len * 0.6, G.laneX(lane), CFG.TRAIN_H.low + 1.0, Game.rollPower());
       G.z += len + 12;
     } },
     { id: 'mixedLow', w: () => 6 + Gen.diffGuess * 6, fn: (G) => {
@@ -1361,7 +1427,7 @@ const Gen = {
       for (let i = 0; i < Math.floor(len / 2.3); i++) {
         Game.addCoin(G.z + st + 2 + i * 2.3, G.laneX(lane), h + 0.55);
       }
-      Game.addPower(G.z + st + len * 0.62, G.laneX(lane), h + 1.5, Utils.pick(POWERS).id);
+      Game.addPower(G.z + st + len * 0.62, G.laneX(lane), h + 1.5, Game.rollPower());
       const other = (lane + 1) % 3;
       for (let i = 0; i < 4; i++) Game.addCoin(G.z + st + 3 + i * 2.2, G.laneX(other), 0.85);
       G.z += st + len + 13;
@@ -1383,7 +1449,7 @@ const Gen = {
       Game.addTrain(G.z + st1 + len1 + st2, lane, len2, h2);
       for (let i = 0; i < Math.floor(len1 / 2.3); i++) Game.addCoin(G.z + st1 + 2 + i * 2.3, G.laneX(lane), h1 + 0.55);
       for (let i = 0; i < Math.floor(len2 / 2.3); i++) Game.addCoin(G.z + st1 + len1 + st2 + 2 + i * 2.3, G.laneX(lane), h2 + 0.55);
-      Game.addPower(G.z + st1 + len1 + st2 + len2 * 0.6, G.laneX(lane), h2 + 1.5, Utils.pick(POWERS).id);
+      Game.addPower(G.z + st1 + len1 + st2 + len2 * 0.6, G.laneX(lane), h2 + 1.5, Game.rollPower());
       const other = (lane + 2) % 3;
       for (let i = 0; i < 5; i++) Game.addCoin(G.z + 4 + i * 2.2, G.laneX(other), 0.85);
       G.z += st1 + len1 + st2 + len2 + 14;
@@ -1408,7 +1474,7 @@ const Gen = {
       for (let i = 0; i < segs; i++) {
         let l = Utils.irand(0, 2);
         while (l === prev) l = Utils.irand(0, 2);          // 每段都必须换道
-        Game.addObstacle(Utils.pick(['barrier', 'cone', 'turnstile']), l, { worldZ: G.z + i * 7.5 });
+        Game.addObstacle(Utils.pick(['barrier', 'turnstile']), l, { worldZ: G.z + i * 7.5 });
         for (let c = 0; c < 3; c++) Game.addCoin(G.z + i * 7.5 + c * 1.7, G.laneX(prev), 0.85);
         prev = l;
       }
@@ -1431,7 +1497,7 @@ const Gen = {
       G.z += segs * 13 + 10;
     } },
     /* 纯装饰：信号灯 / 水洼 / 龙门架，路过即可点亮图鉴，不阻挡 */
-    { id: 'decor', w: () => 5, fn: (G) => {
+    { id: 'decor', w: () => 8, noHazard: true, fn: (G) => {
       const k = Utils.pick(['signal', 'puddle', 'gantry']);
       Game.addObstacle(k, Utils.irand(0, 2), { worldZ: G.z, decor: true });
       G.z += 18;
@@ -1443,9 +1509,15 @@ const Gen = {
   pickPattern(diff) {
     const pool = [];
     let total = 0;
+    /* rate = 难度档位的 obstacleRate。只压"会挡路"的段落权重，
+       noHazard 标记的（金币段 / 道具段 / 装饰段）原样保留 ——
+       所以调低难度 = 障碍变少、补给不变，而不是整张地图变空。 */
+    const rate = (this.rate == null) ? 1 : this.rate;
     for (const p of this.patterns) {
-      const w = Math.max(0, p.w.call(this));
+      let w = Math.max(0, p.w.call(this));
       if (w <= 0) continue;
+      if (!p.noHazard) w *= rate;
+      if (w <= 0.0001) continue;
       total += w; pool.push({ p: p, acc: total });
     }
     if (total <= 0) { this.fallback(); return; }

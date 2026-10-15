@@ -89,6 +89,21 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .ico-slow{width:15px;height:15px;border-radius:50%;background:none;box-shadow:inset 0 0 0 2.5px #b9a6ff}
 .ico-slow::before{content:"";position:absolute;left:6px;top:3px;width:2.5px;height:5px;background:#b9a6ff;border-radius:2px}
 .ico-slow::after{content:"";position:absolute;left:6px;top:6px;width:4.5px;height:2.5px;background:#b9a6ff;border-radius:2px}
+/* 二段跳：双层上箭头（吃到后空中还能再蹬一脚） */
+.ico-dbljump{width:16px;height:16px;background:none}
+.ico-dbljump::before{content:"";position:absolute;left:3px;top:0;width:11px;height:11px;
+  border-top:3.5px solid #4fd6a0;border-left:3.5px solid #4fd6a0;transform:rotate(45deg);border-radius:2px;opacity:.5}
+.ico-dbljump::after{content:"";position:absolute;left:3px;top:6px;width:11px;height:11px;
+  border-top:3.5px solid #4fd6a0;border-left:3.5px solid #4fd6a0;transform:rotate(45deg);border-radius:2px}
+/* 金币雨：两枚落下的金币 */
+.ico-rain{width:18px;height:18px;background:none}
+.ico-rain::before{content:"";position:absolute;left:0;top:0;width:9px;height:9px;border-radius:50%;
+  background:linear-gradient(180deg,#ffe89a,#eea90c)}
+.ico-rain::after{content:"";position:absolute;left:8px;top:7px;width:8px;height:8px;border-radius:50%;
+  background:linear-gradient(180deg,#ffe89a,#eea90c)}
+/* 时间冻结：六角冰晶 */
+.ico-freeze{width:17px;height:17px;background:linear-gradient(180deg,#c9f2ff,#3fb0ea);
+  clip-path:polygon(50% 0%,58% 36%,100% 26%,64% 50%,100% 74%,58% 64%,50% 100%,42% 64%,0% 74%,36% 50%,0% 26%,42% 36%)}
 .ico-star{width:0;height:0}
 .ico-heart{width:15px;height:14px;background:var(--red);border-radius:3px;transform:rotate(-45deg);margin-top:3px}
 .ico-heart::after{content:"";position:absolute;left:0;top:0;width:15px;height:14px;background:var(--red);border-radius:3px;transform:rotate(90deg)}
@@ -146,6 +161,8 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .power-item.p-shield .bar i{background:#2ee6d6}
 .power-item.p-dash .bar i{background:#ff3d6e}
 .power-item.p-slow .bar i{background:#9b7bff}
+.power-item.p-dbljump .bar i{background:#4fd6a0}
+.power-item.p-freeze .bar i{background:#4fb8f0}
 
 .combo-tag{position:absolute;right:14px;top:calc(64px + env(safe-area-inset-top,0px));color:#fff;font-weight:900;font-size:22px;text-shadow:0 3px 0 rgba(0,0,0,.35);opacity:0;transition:opacity .2s;pointer-events:none;text-align:right}
 .combo-tag.show{opacity:1;animation:pop .3s ease}

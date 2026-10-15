@@ -4,24 +4,28 @@
    ========================================================= */
 'use strict';
 
-/* ---------------- 难度三档 ---------------- */
+/* ---------------- 难度三档 ----------------
+   obstacleRate 现在**真的生效**了（生成器按它缩放"会挡路"段落的权重，
+   见 game.js 的 Gen.pickPattern）。以前它只是写在这儿的摆设：
+   三档的障碍密度实际上完全一样，"简单"只是速度慢一点。 */
 const DIFFICULTIES = [
   {
     id: 'easy', name: '简单', tag: '轻松跑',
-    speedStart: 22, speedMax: 38, accel: 0.42,
-    obstacleRate: 0.72, coinRate: 1.25, scoreMul: 0.8, reviveFree: 1,
-    desc: '障碍更少、速度更慢，第一次复活免费，适合熟悉操作',
+    speedStart: 21, speedMax: 36, accel: 0.40,
+    obstacleRate: 0.36, coinRate: 1.25, scoreMul: 0.8, reviveFree: 1,
+    trainForgive: 1,
+    desc: '障碍少一半多、速度更慢，撞车厢也只算一次失误，适合熟悉操作',
   },
   {
     id: 'normal', name: '普通', tag: '标准',
-    speedStart: 28, speedMax: 48, accel: 0.53,
-    obstacleRate: 1, coinRate: 1, scoreMul: 1, reviveFree: 0,
+    speedStart: 26, speedMax: 45, accel: 0.50,
+    obstacleRate: 0.62, coinRate: 1, scoreMul: 1, reviveFree: 0,
     desc: '标准体验，约 38 秒到极速；云端排行榜只统计此难度',
   },
   {
     id: 'hard', name: '困难', tag: '硬核',
-    speedStart: 34, speedMax: 56, accel: 0.58,
-    obstacleRate: 1.3, coinRate: 0.9, scoreMul: 1.3, reviveFree: 0,
+    speedStart: 33, speedMax: 54, accel: 0.58,
+    obstacleRate: 1.15, coinRate: 0.9, scoreMul: 1.3, reviveFree: 0,
     desc: '起步就很快、障碍密集，金币略少但分数 ×1.3，老手专属',
   },
 ];
@@ -161,10 +165,9 @@ OUTFITS.forEach(o => { OUTFIT_MAP[o.key] = o; });
 function outfitsOf(skin) { return OUTFITS.filter(o => o.skin === skin); }
 function outfitKey(skin, id) { return skin + ':' + (id || 'origin'); }
 
-/* ---------------- 障碍图鉴（21 种） ---------------- */
+/* ---------------- 障碍图鉴（20 种） ---------------- */
 const CODEX = [
   { id: 'barrier', name: '护栏', kind: '跳过', icon: 'barrier', desc: '橙白相间的小护栏，直接跳过去。' },
-  { id: 'cone', name: '交通锥', kind: '跳过', icon: 'cone', desc: '检修用的锥桶，跳一下就过了。' },
   { id: 'dumpster', name: '垃圾箱', kind: '跳过', icon: 'dumpster', desc: '绿色大垃圾箱，助跑起跳可以越过去。' },
   { id: 'highbar', name: '限高架', kind: '滑铲', icon: 'highbar', desc: '低矮的横梁，只能滑铲通过。' },
   { id: 'train_low', name: '矮车厢', kind: '车顶', icon: 'train', desc: '顶面高过角色头顶一大截。光靠跳上不去，得靠斜坡、缓行楼梯、弹跳垫或跑鞋。' },
@@ -188,7 +191,7 @@ const CODEX = [
 
 /* 障碍类型 → 图鉴条目 */
 const CODEX_MAP = {
-  barrier: 'barrier', cone: 'cone', dumpster: 'dumpster', highbar: 'highbar',
+  barrier: 'barrier', dumpster: 'dumpster', highbar: 'highbar',
   spring: 'spring', ramp: 'ramp', tunnel: 'tunnel', signal: 'signal',
   puddle: 'puddle', gantry: 'gantry', train_low: 'train_low', train_mid: 'train_mid',
   train_high: 'train_high', oncoming: 'oncoming',
@@ -213,14 +216,21 @@ const CHALLENGES = [
   { id: 'c12', name: '传奇跑者', goal: '单局跑出 5000 米', type: 'dist', val: 5000, reward: 1200 },
 ];
 
-/* ---------------- 道具（含护盾） ---------------- */
+/* ---------------- 道具（图鉴用） ----------------
+   与 config.js 的 POWERS 一一对应。这里只记名字和颜色，
+   实际掉落权重、时长都在 POWERS / POWER_TIME 里。 */
 const POWERS_V2 = [
   { id: 'magnet', name: '金币磁铁', color: '#e6423c' },
-  { id: 'jet', name: '喷射背包', color: '#4f9dff' },
   { id: 'x2', name: '双倍金币', color: '#f5b21a' },
-  { id: 'shoe', name: '超级跑鞋', color: '#7cd44a' },
-  { id: 'board', name: '悬浮板', color: '#ff5fa2' },
   { id: 'shield', name: '护盾', color: '#2ee6d6' },
+  { id: 'shoe', name: '超级跑鞋', color: '#7cd44a' },
+  { id: 'jet', name: '喷射背包', color: '#4f9dff' },
+  { id: 'dash', name: '无敌冲刺', color: '#ff3d6e' },
+  { id: 'slow', name: '时间减速', color: '#9b7bff' },
+  { id: 'board', name: '悬浮板', color: '#ff5fa2' },
+  { id: 'dbljump', name: '二段跳', color: '#5ee0a8' },
+  { id: 'rain', name: '金币雨', color: '#ffc93c' },
+  { id: 'freeze', name: '时间冻结', color: '#7fd4ff' },
 ];
 
 /* ---------------- 工具 ---------------- */
