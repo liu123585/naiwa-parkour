@@ -31,17 +31,21 @@ PAGES_SOURCE=skills edgeone makers deploy   # 2. 再直传到 EdgeOne（producti
 部署会输出一行 `EDGEONE_DEPLOY_URL=`，里面带 `?eo_token=...` 参数——
 **这串参数不能截断**，但实测去掉 token 也能正常访问，稳定地址就是上面那个域名。
 
-⚠️ **直传部署不遵循 `.gitignore`**（只有 `node_modules/` 是 CLI 单独排除的）。
-项目目录里的东西会原样打进上传包——`shots/` 是开发截图，几十 MB，
-留在项目里会拖垮上传，典型表现是 `edge-functions/index.js`、`project.json`
-这些关键文件 ECONNRESET 上传失败 → 部署 Failed。
-**部署前先把 `shots/` 挪出项目目录**，传完再挪回来：
+⚠️ **直传部署不遵循 `.gitignore`**，排除规则是 CLI 里写死的一份名单
+（`node_modules` / `cloud-functions` / `edge-functions` / `functions` / `.git` /
+`.edgeone` / `.vscode` / `.vercel` … 以及**所有以 `.` 开头的顶层条目**）。
+不在名单里的东西会原样打进上传包。
+
+所以开发截图目录**故意叫 `.shots/`（点开头）**——靠的就是这条"点开头自动排除"，
+不用再手动挪进挪出。别把它改回 `shots/`，否则每次部署都会白传几十 MB，
+典型表现是 `edge-functions/index.js`、`project.json` 这类关键文件
+ECONNRESET 上传失败 → 部署 Failed。
 
 ```bash
-mv shots ../.naiwa-shots-hold                    # 1. 挪走开发截图
-PAGES_SOURCE=skills edgeone makers deploy --json # 2. 直传（--json 拿一行机器可读结果）
-mv ../.naiwa-shots-hold shots                    # 3. 挪回来
+PAGES_SOURCE=skills edgeone makers deploy --json # --json 拿一行机器可读结果
 ```
+
+（`tools/shot.js`、`tools/tour.js`、`tools/verify_net.js` 的默认输出目录已同步为 `.shots/`。）
 
 另外 `edgeone makers deploy` 的退出码和回显都不完全可信——
 **别只看退出码**，用 `curl` 打线上端点看实际响应才算数

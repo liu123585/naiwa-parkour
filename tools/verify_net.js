@@ -5,7 +5,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 
 (async () => {
   const url = process.argv[2] || 'http://localhost:8899/?dev=run&god=1&warp=1100&q=high&noperf=1';
-  const out = process.argv[3] || 'shots/60-accept-run.png';
+  const out = process.argv[3] || '.shots/60-accept-run.png';
   const browser = await chromium.launch({
     executablePath: EDGE, headless: true,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',

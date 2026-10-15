@@ -1,7 +1,7 @@
 /* =========================================================
    竖屏截图验收：用系统 Edge 无头模式跑一遍，顺便回收控制台报错
    用法: node tools/shot.js "<url>" "<输出png>" [等待毫秒]
-   例:   node tools/shot.js "http://localhost:8899/?dev=run&warp=900" shots/run.png 3500
+   例:   node tools/shot.js "http://localhost:8899/?dev=run&warp=900" .shots/run.png 3500
    ========================================================= */
 'use strict';
 const { chromium } = require('playwright-core');
@@ -12,7 +12,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 
 (async () => {
   const url = process.argv[2] || 'http://localhost:8899/';
-  const out = process.argv[3] || 'shots/shot.png';
+  const out = process.argv[3] || '.shots/shot.png';
   const wait = parseInt(process.argv[4] || '3200', 10);
   /* 可选的第 5 个参数：截图前在页面里跑一段 JS（做对照实验用） */
   const before = process.argv[5] || '';
