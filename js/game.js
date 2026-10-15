@@ -121,8 +121,10 @@ const Game = {
     UI.countdown('出发!', 700);
     Sound.countdown(true);
     /* 第一次开局放一张纯图形的操作示意卡（没有一句说明文字）。
-       看过一次就记住，不再打扰；想再看可以去设置里点"操作示意"。 */
-    if (UI.isTouch() && !Store.data.seenHowto) {
+       看过一次就记住，不再打扰；想再看可以去设置里点"操作示意"。
+       ⚠️ settings.tips 那个开关以前只存不读（全项目没有第二处引用），
+       关掉它其实什么也没发生 —— 现在真接上了：关了就一次都不弹。 */
+    if (UI.isTouch() && Store.data.settings.tips !== false && !Store.data.seenHowto) {
       Store.data.seenHowto = true; Store.save();
       UI.showHowto();
     } else {

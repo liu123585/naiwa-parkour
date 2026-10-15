@@ -269,6 +269,59 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     extra: 'svg ' + howto.svg + ' / 图形 ' + howto.shapes + ' / 文字 ' + howto.text + ' 字',
   });
 
+  /* 5.13 开局那张卡"别挡着人玩"。
+     用户反馈原话：手机开局那个提示时间太长、影响正常游玩。
+     所以这里钉住四条，任何一条被改回去都应该红：
+       · 手机上只画"手指滑动"一格（鼠标 / 方向键 / WASD 跟手机玩家无关）；
+       · 2.4 秒自动消失（3 秒还没走就算超时）；
+       · 玩家一碰屏幕立刻淡出，不等计时器；
+       · 设置里关掉"操作提示"就一次都不弹。 */
+  const soloCard = await page.evaluate(() => {
+    const d = document.createElement('div');
+    d.innerHTML = (typeof HOWTO_TOUCH_SVG !== 'undefined') ? HOWTO_TOUCH_SVG : '';
+    return {
+      svg: d.querySelectorAll('svg').length,
+      groups: d.querySelectorAll('g.hw').length,
+      shapes: d.querySelectorAll('path,rect,circle').length,
+    };
+  });
+  R.push({
+    name: '手机示意卡只有一格', expect: 'yes',
+    got: (soloCard.svg === 1 && soloCard.groups === 1 && soloCard.shapes >= 8) ? 'yes' : 'no',
+    extra: 'svg ' + soloCard.svg + ' / 格 ' + soloCard.groups + ' / 图形 ' + soloCard.shapes,
+  });
+
+  await page.evaluate(() => { UI.showHowto(); });
+  const howtoShown = await page.evaluate(() => !document.getElementById('howto').classList.contains('hidden'));
+  await page.waitForTimeout(3000);
+  const howtoAutoGone = await page.evaluate(() => document.getElementById('howto').classList.contains('hidden'));
+  R.push({
+    name: '示意卡 3 秒内自动消失', expect: 'yes',
+    got: (howtoShown && howtoAutoGone) ? 'yes' : 'no',
+    extra: '弹出 ' + howtoShown + ' / 3 秒后已隐藏 ' + howtoAutoGone,
+  });
+
+  await page.evaluate(() => { UI.showHowto(); });
+  await page.waitForTimeout(60);
+  await page.evaluate(() => { window.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
+  await page.waitForTimeout(400);
+  const howtoTapGone = await page.evaluate(() => document.getElementById('howto').classList.contains('hidden'));
+  R.push({ name: '碰一下就淡出', expect: 'yes', got: howtoTapGone ? 'yes' : 'no', extra: '' });
+
+  /* settings.tips 这个开关以前只存不读（全项目没有第二处引用），
+     关掉它其实什么也没发生 —— 现在真接上了，这里钉住。
+     测完把 tips / seenHowto 还原，别污染后面的用例。 */
+  const tipsOff = await page.evaluate(() => {
+    const s = Store.data;
+    s.settings.tips = false; s.seenHowto = false;
+    UI.hideHowto();
+    Game.start();
+    const shown = !document.getElementById('howto').classList.contains('hidden');
+    s.settings.tips = true;
+    return shown;
+  });
+  R.push({ name: '关掉「操作提示」不弹卡', expect: 'no', got: tipsOff ? 'yes' : 'no', extra: '' });
+
   R.push({ name: '全程零原生弹窗', expect: '0', got: String(nativeDialog), extra: '' });
 
   let bad = 0;

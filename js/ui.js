@@ -92,6 +92,31 @@ const HOWTO_SVG = `
   </g>
 </svg>`;
 
+/* 手机上开局只弹这一格：手指 + 四向箭头。
+   为什么要单独做一版，而不是把上面那张 2×2 缩一缩：
+     ① 手机玩家既不插鼠标也不接键盘 —— 上面那张卡里
+        「鼠标拖动 / 方向键 / WASD」三格跟他完全无关，
+        却要在开局最需要看清车道的那两秒里糊住整个屏幕中间；
+     ② 四格图缩到手机宽度，每格只剩百来像素，箭头细得像装饰，
+        该看清的那一格反而最看不清。
+   viewBox 直接框住第①格（6,6 310×160），下面的格子自然被裁掉，
+   不用额外写一堆隐藏规则，图形本身还是同一套。 */
+const HOWTO_TOUCH_SVG = `
+<svg viewBox="6 6 310 160" class="howto-svg">
+  <g class="hw hw1">
+    <rect x="6" y="6" width="310" height="160" rx="20" class="hw-bg"/>
+    <circle cx="161" cy="86" r="15" class="hw-finger"/>
+    <path d="M161 68 V34" class="hw-arrow" stroke="#8ce85a"/>
+    <path d="M146 50 L161 31 L176 50" class="hw-head" stroke="#8ce85a"/>
+    <path d="M161 104 V130" class="hw-arrow" stroke="#5cc4ff"/>
+    <path d="M146 114 L161 133 L176 114" class="hw-head" stroke="#5cc4ff"/>
+    <path d="M144 86 H88" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M104 71 L85 86 L104 101" class="hw-head" stroke="#ffd34d"/>
+    <path d="M178 86 H234" class="hw-arrow" stroke="#ffd34d"/>
+    <path d="M218 71 L237 86 L218 101" class="hw-head" stroke="#ffd34d"/>
+  </g>
+</svg>`;
+
 /* ---------------- 每日任务 ---------------- */
 const Missions = {
   _dirty: false,
@@ -230,16 +255,47 @@ const UI = {
     slot.el.classList.add('pop');
   },
 
-  /* 开局操作示意：纯图形，不写一句说明 */
+  /* 开局操作示意：纯图形，不写一句说明，而且绝不赖着不走。
+     ⚠️ 四条"别挡着人玩"的约束，改这里务必一起守住：
+       ① 只在手机上出现（Game.start 里判 isTouch）——电脑上鼠标键盘玩家不需要它；
+       ② 时长 2.4 秒（原来 4.2 秒，玩家反馈"太长，影响正常游玩"）；
+       ③ 玩家一碰屏幕 / 一按键立刻淡出，不等计时器 ——
+          开局那两秒正是判断车道的时刻，手指已经动了它就该让位；
+       ④ 只画"手指滑动"一格、尺寸压到 62vw（见 HOWTO_TOUCH_SVG 注释）。 */
+  _howtoOut: null, _howtoBind: null,
   showHowto() {
     const h = this.el.howto;
     if (!h) return;
-    h.innerHTML = HOWTO_SVG;
-    h.classList.remove('hidden');
+    h.innerHTML = HOWTO_TOUCH_SVG;
+    h.classList.remove('hidden', 'out');
     clearTimeout(this._howtoTimer);
-    this._howtoTimer = setTimeout(() => h.classList.add('hidden'), 4200);
+    this._howtoTimer = setTimeout(() => this.hideHowto(), 2400);
+    /* 一碰就走。监听挂 window 而不是这张卡上：
+       卡自己是 pointer-events:none（绝不能吃掉滑屏手势），
+       挂在它身上等于永远收不到事件。
+       开局是从"点击开跑"按钮的 click 里进来的，而 click 在 pointerdown 之后，
+       所以这里补挂的监听不会被"点开跑"那一下顺手关掉。 */
+    if (!this._howtoBind) {
+      this._howtoBind = () => this.hideHowto();
+      window.addEventListener('pointerdown', this._howtoBind, { passive: true });
+      window.addEventListener('keydown', this._howtoBind);
+    }
   },
-  hideHowto() { if (this.el.howto) this.el.howto.classList.add('hidden'); },
+  hideHowto() {
+    const h = this.el.howto;
+    if (!h) return;
+    clearTimeout(this._howtoTimer);
+    if (this._howtoBind) {
+      window.removeEventListener('pointerdown', this._howtoBind);
+      window.removeEventListener('keydown', this._howtoBind);
+      this._howtoBind = null;
+    }
+    if (h.classList.contains('hidden')) return;
+    /* 淡出而不是"啪"一下消失：这东西动得快，硬切会像闪了一下 */
+    h.classList.add('out');
+    clearTimeout(this._howtoOut);
+    this._howtoOut = setTimeout(() => { h.classList.add('hidden'); h.classList.remove('out'); }, 260);
+  },
 
   /* ---------------- 屏幕切换 ---------------- */
   hideAllScreens() {
@@ -843,11 +899,13 @@ const UI = {
         Sound.ui();
       };
     });
-    /* 一键解锁全部（破解模式）。
+    /* 一键解锁全部。
        跟商城同一个理由走"点两次"确认：不用原生 confirm，
-       免得在 iframe / 微信内置浏览器里被静默拦掉、点了没反应。 */
+       免得在 iframe / 微信内置浏览器里被静默拦掉、点了没反应。
+       ⚠️ 按钮文案从按钮自己身上读，不在这儿再抄一份：
+       两处抄写迟早会写岔，就会出现"确认超时后文字回不去"的假故障。 */
     const ua = q('btnUnlockAll');
-    const uaLabel = '一键解锁全部内容（破解模式）';
+    const uaLabel = ua ? ua.textContent : '';
     if (ua) ua.onclick = () => {
       if (this._unlockAsk) {
         this._unlockAsk = false;

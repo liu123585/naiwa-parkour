@@ -193,17 +193,27 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
   100%{opacity:0;transform:scale(1.22)}
 }
 
-/* ---------------- 开局操作示意（全图形） ---------------- */
-.howto{position:absolute;left:50%;top:calc(50% - 30px);transform:translate(-50%,-50%);width:min(92vw,660px);
-  padding:14px 16px;border-radius:24px;background:rgba(11,14,19,.94);border:2px solid rgba(255,255,255,.16);
+/* ---------------- 开局操作示意（全图形，手机上只有一格） ----------------
+   尺寸刻意压到 62vw、位置抬到 20%（HUD 下面、地平线以上的天空带）：
+   这是开局一闪而过的"怎么划"提示，不是说明书。
+   为什么不能放屏幕正中 —— 跑酷的看点全在"角色正前方那一段赛道"
+   （障碍刚露头、要在这里判车道），正中恰恰是最不能挡的地方。
+   以前是 92vw 的大卡糊在正中间、还赖 4.2 秒，
+   玩家反馈"影响正常游玩"——所以改小、改短、挪开、一碰就淡出。 */
+.howto{position:absolute;left:50%;top:20%;transform:translate(-50%,-50%);width:min(62vw,300px);
+  padding:10px 12px;border-radius:20px;background:rgba(11,14,19,.9);border:2px solid rgba(255,255,255,.16);
   z-index:7;
-  animation:howtoIn .34s ease-out both}
+  animation:howtoIn .28s ease-out both}
 /* 示意卡是纯展示层，绝不能吃掉滑屏手势。
    .ui > * 那条规则把直接子元素都设成了 pointer-events:auto，
    这里必须用同等特异度盖回来。 */
 .ui > .howto{pointer-events:none}
 .howto.hidden{display:none}
+/* 淡出：一碰屏幕 / 按键就走这条路（ui.js 的 hideHowto），
+   260ms 后由 JS 补上 .hidden。时长必须跟 JS 里那个 setTimeout 对齐。 */
+.howto.out{animation:howtoOut .26s ease-in forwards}
 @keyframes howtoIn{from{opacity:0;transform:translate(-50%,-50%) scale(.9)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes howtoOut{to{opacity:0;transform:translate(-50%,-50%) scale(.94)}}
 .howto-svg{width:100%;height:auto;display:block}
 /* 设置面板里常驻的那一份：面板本身是浅色的，所以给它垫一块深色底，
    同一套图形不用改颜色就能直接复用。 */
@@ -225,6 +235,11 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .hw{opacity:.5;animation:hwPulse 8s ease-in-out infinite}
 .hw2{animation-delay:2s}.hw3{animation-delay:4s}.hw4{animation-delay:6s}
 @keyframes hwPulse{0%,100%{opacity:.5}6%,20%{opacity:1}}
+/* 手机上那张只有一格，"依次点亮"就没人来依次了 ——
+   而且 8 秒周期里最亮只占 1.6 秒，开局那一瞬间很可能正好落在暗相（.5），
+   该看清的箭头反而看不清。改成整格轻轻呼吸，始终亮着。 */
+.howto .hw{opacity:1;animation:hwSolo 2.4s ease-in-out infinite}
+@keyframes hwSolo{0%,100%{opacity:.84}50%{opacity:1}}
 
 /* ---------------- 主菜单：车间工作台 ----------------
    背景不再是"一块不透明的墨绿切割垫"，而是一层半透的压暗罩——
