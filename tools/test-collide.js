@@ -118,16 +118,42 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 120, rollAt: 992, obs: [{ type: 'highbar', lane: 1, z: 14 }] });
     add('滑铲过高栏', 'pass', r.hit ? 'hit' : 'pass');
 
-    /* ---- 6. 矮车厢加高到 1.9 米之后，光靠腿跳不上车顶了 ----
-       跳跃最高点 = 10.2²/(2×31) ≈ 1.68 米 < 1.9 - 0.18 容差，必撞。
-       这正是"我根本不能直接一下子蹦上去"要的效果。 */
+    /* ---- 6. 矮车厢 2.6 米：光靠腿跳不上车顶 ----
+       跳跃最高点 = 10.2²/(2×31) ≈ 1.68 米 < 2.6 - 0.18 容差，必撞。
+       这正是"根本不能一下子蹦上去、看着也跳不上去"要的效果
+       （角色站立 1.72 米，车顶高过角色头顶一大截）。 */
     r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, jumpAt: 1000, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });
-    add('裸跳 1.9m 车厢顶（应撞）', 'hit', r.hit ? 'hit' : 'pass');
+    add('裸跳矮车厢顶（应撞）', 'hit', r.hit ? 'hit' : 'pass');
 
-    /* ---- 6b. 换成跑鞋（跳 13.2 → 顶点 2.81m）照样能上顶，路没被堵死 ---- */
-    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, jumpAt: 1000, shoe: true, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });
-    add('跑鞋跳上 1.9m 车厢顶', 'pass', r.hit ? 'hit' : 'pass');
+    /* ---- 6b. 换跑鞋（13.6 → 顶点 2.98m）能上顶，路没被堵死。
+       助跑必须留够：车顶 2.6 米要求脚底到 2.42 米，而跑鞋顶点才 2.98，
+       "跳早了飞过头、跳晚了够不着"，可用起跳窗口约在撞线前 0.25~0.63 秒。
+       40m/s 时即提前 10~25 米 —— 这里取 14 米（车厢在 1024，1010 起跳），落在窗口正中。 */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 200, jumpAt: 1010, shoe: true, obs: [{ kind: 'train', lane: 1, z: 24, len: 24, h: CFG.TRAIN_H.low }] });
+    add('跑鞋跳上矮车厢顶', 'pass', r.hit ? 'hit' : 'pass');
     add('跑鞋上顶被识别', 'yes', r.onRoof || r.roofs > 0 ? 'yes' : 'no');
+
+    /* ---- 6b-2. 同一个车顶，起跳太晚（只提前 8 米）就够不着 —— 证明这个窗口真实存在，
+       顺便钉死"跑鞋不是万能钥匙"。 */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 200, jumpAt: 1016, shoe: true, obs: [{ kind: 'train', lane: 1, z: 24, len: 24, h: CFG.TRAIN_H.low }] });
+    add('跑鞋起跳太晚（应撞）', 'hit', r.hit ? 'hit' : 'pass');
+
+    /* ---- 6c. 斜坡：踩上去自动起跳，必须落到矮车厢顶（对应 rampRoof 段）----
+       助跑距离用生成器同款 GAP=11。这条路以前完全没有测试覆盖，
+       属于"改高度最容易悄悄弄坏"的地方 —— 旧值 GAP=2.6 时必撞车头。 */
+    r = run({
+      speed: 30, dt: 1 / 60, px: 0, frames: 260,
+      obs: [{ type: 'ramp', lane: 1, z: 0 }, { kind: 'train', lane: 1, z: 11, len: 20, h: CFG.TRAIN_H.low }],
+    });
+    add('斜坡冲上矮车厢顶', 'yes', (!r.hit && (r.onRoof || r.roofs > 0)) ? 'yes' : 'no');
+
+    /* ---- 6d. 弹跳垫：对应 springRoof 段（launch 18 / GAP 12 / 中车厢）---- */
+    r = run({
+      speed: 30, dt: 1 / 60, px: 0, frames: 300,
+      obs: [{ type: 'spring', lane: 1, z: 0, extra: { spring: true, launch: 18 } },
+        { kind: 'train', lane: 1, z: 12, len: 20, h: CFG.TRAIN_H.mid }],
+    });
+    add('弹跳垫冲上中车厢顶', 'yes', (!r.hit && (r.onRoof || r.roofs > 0)) ? 'yes' : 'no');
 
     /* ---- 7. 不跳，侧撞低车厢 ---- */
     r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });

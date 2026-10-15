@@ -1017,7 +1017,11 @@ const Game = {
          所以这里给的 len 只是个占位值。 */
       stairs: { hw: 1.02, len: 4.4, y0: 0, y1: CFG.TRAIN_H.low, stair: true, climb: CFG.TRAIN_H.low, base: 0 },
       turnstile: { hw: 0.72, len: 0.45, y0: 0, y1: 2.20 },                      // 闸机：跳不过也滑不过，只能变道
-      ramp: { hw: 0.90, len: 2.2, y0: 0, y1: 0.50, spring: true, ramp: true, launch: 12 },  // 斜坡：冲上去正好落到矮车厢顶
+      /* 斜坡：冲上去把人弹到矮车厢顶。
+         launch 16 是按"必须覆盖 15.5~47m/s 全速度段"反推的：初速太小的话，
+         慢速时会在升到车顶高度之前就贴上车厢脸（必撞）。
+         水平落点由 rampRoof 段的 GAP 配合，两者要一起改。 */
+      ramp: { hw: 0.90, len: 2.2, y0: 0, y1: 0.50, spring: true, ramp: true, launch: 16 },
       sweeper: { hw: 0.55, len: 0.5, y0: 0, y1: 1.00, sweep: true },            // 横扫杆：左右摆动，掐时机跳过
       /* ---- 纯装饰：只出现不挡路（decor 标记在 collide 里直接放行） ---- */
       signal: { hw: 0.30, len: 0.30, y0: 0, y1: 2.60, decor: true },
@@ -1233,13 +1237,18 @@ const Gen = {
       for (let i = 0; i < Math.floor(len / 2.4); i++) Game.addCoin(G.z + 3 + i * 2.4, G.laneX(free), 0.85);
       G.z += len + 12;
     } },
+    /* 弹跳垫冲上中车厢顶。中车厢跟矮车厢一起加高之后，弹射初速必须跟着涨：
+       中车厢 3.3 米要求 y ≥ 3.12，落地时间窗只剩 ≈0.21~0.95 秒，
+       按 47m/s（≥10.0 米）和 15.5m/s（≤14.7 米）两头卡，GAP 取 12。
+       旧值 launch 15.5 / GAP 4.5：30m/s 时人只在 1.98 米高就贴上车厢，必撞。 */
     { id: 'springRoof', w: () => Gen.diffGuess > 0.1 ? 9 : 0, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      Game.addObstacle('spring', lane, { worldZ: G.z, spring: true, launch: 15.5 });
+      const GAP = 12;
+      Game.addObstacle('spring', lane, { worldZ: G.z, spring: true, launch: 18 });
       const len = Utils.irand(18, 26);
-      Game.addTrain(G.z + 4.5, lane, len, CFG.TRAIN_H.mid);
-      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 8 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.mid + 0.55);
-      G.z += len + 14;
+      Game.addTrain(G.z + GAP, lane, len, CFG.TRAIN_H.mid);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + GAP + 3 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.mid + 0.55);
+      G.z += GAP + len + 14;
     } },
     { id: 'coneLine', w: () => 7, fn: (G) => {
       const lane = Utils.irand(0, 2), n = Utils.irand(3, 6);
@@ -1322,13 +1331,20 @@ const Gen = {
       for (let i = 0; i < 5; i++) Game.addCoin(G.z + i * 2.1, G.laneX(free), 0.85);
       G.z += 15;
     } },
-    /* 斜坡：冲上去正好落在矮车厢顶上 */
+    /* 斜坡：冲上去被弹飞，落点在矮车厢顶。
+       ⚠️ GAP 不能小。斜坡是"一进范围就起跳"（触发条件 py < y1+0.15，人在跑道上就满足），
+          所以"起跳点"就是斜坡入口，离车厢有多远 = 有多少水平距离去爬升。
+          按初速 16 反推：y 高过 h-0.18 的时间窗 ≈ 0.18~0.85 秒，换算成距离，
+          47m/s 至少要 8.7 米、15.5m/s 最多 13.1 米 —— 取 11 米，两头都有余量。
+          以前这里是 2.6 米：30m/s 时 0.067 秒就贴上去了，人还在 0.77 米高，
+          必撞车头 —— 等于"一踩斜坡就死"，而且一直没有任何测试覆盖。 */
     { id: 'rampRoof', w: () => 8, fn: (G) => {
       const lane = Utils.irand(0, 2), len = Utils.irand(14, 22);
+      const GAP = 11;
       Game.addObstacle('ramp', lane, { worldZ: G.z });
-      Game.addTrain(G.z + 2.6, lane, len, CFG.TRAIN_H.low);
-      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 6 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
-      G.z += len + 13;
+      Game.addTrain(G.z + GAP, lane, len, CFG.TRAIN_H.low);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + GAP + 3 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
+      G.z += GAP + len + 13;
     } },
     /* 缓行楼梯：不用跳、不用弹射，直接一路跑上车顶。
        和 rampRoof 是两种手感 —— ramp 是"冲上去被弹飞"，楼梯是"顺着台阶走上去"，
