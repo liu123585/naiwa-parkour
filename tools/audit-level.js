@@ -58,7 +58,10 @@ const N = parseInt(process.argv[2] || '900', 10);
     function passable(o) {
       if (o.decor || o.stair || o.spring || o.ramp) return true;
       if (o.kind === 'coin' || o.kind === 'power') return true;
-      if (o.kind === 'train') return o.h <= 1.6;          // 矮车厢能跳上去，其余跳不过
+      /* 车厢加高之后（最矮 1.9 米 > 跳跃顶点 1.68 米），任何一节都跳不上车顶了，
+         一律按「这条道走不通」算。想上顶只有斜坡 / 缓行楼梯 / 弹跳垫，
+         那三样自己就返回 true。 */
+      if (o.kind === 'train') return false;
       if (o.sweep) return true;                            // 横扫杆掐时机能跳
       if ((o.y0 || 0) >= 1.2) return true;                 // 上沿封顶型：滑铲能过
       return (o.y1 || 1.05) <= 1.1;                        // 矮障碍：跳过去

@@ -107,8 +107,15 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .ui{position:fixed;inset:0;pointer-events:none;z-index:10}
 .ui > *{pointer-events:auto}
 .screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.screen-dim{background:rgba(12,14,20,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-#screenChars,#screenMissions,#screenSettings{background:rgba(12,14,20,.55);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+/* ⚠️ 全站禁止 backdrop-filter（毛玻璃）。
+   原因：底下是一块每帧都在重画的 WebGL 画布，任何带 backdrop-filter 的元素
+   都会让合成器每帧把底下的画面重新采样 + 跑一遍高斯模糊。HUD 上原本有
+   7 个 chip、2 个按钮、最多 4 个道具条各自一对，加起来十几个模糊区域每帧
+   重算 —— 桌面显卡（4060）毫无感觉，手机上直接掉到三十几帧，
+   这就是"玩起来很卡"的头号原因。
+   观感靠调高背景不透明度补回来，肉眼几乎看不出区别，代价是零。 */
+.screen-dim{background:rgba(12,14,20,.74)}
+#screenChars,#screenMissions,#screenSettings{background:rgba(12,14,20,.72)}
 #screenMenu{z-index:1}#screenChars,#screenMissions,#screenSettings,#screenPause,#screenOver{z-index:3}
 #hud{z-index:2}
 
@@ -117,18 +124,18 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .hud > *{pointer-events:auto}
 .hud-row{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .hud-left{display:flex;gap:7px;flex-wrap:wrap;pointer-events:none}
-.chip{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:14px;background:rgba(20,23,30,.55);color:#fff;font-weight:800;font-size:15px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,.18)}
+.chip{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:14px;background:rgba(20,23,30,.72);color:#fff;font-weight:800;font-size:15px;border:1.5px solid rgba(255,255,255,.18)}
 .chip-score b{color:var(--milk);font-size:17px;letter-spacing:.5px}
 .chip-dist span{font-size:11px;opacity:.75;font-weight:600}
 .hud-right{display:flex;gap:8px}
-.icon-btn{position:relative;width:44px;height:44px;border-radius:14px;border:1.5px solid rgba(255,255,255,.2);background:rgba(20,23,30,.55);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-family:inherit}
+.icon-btn{position:relative;width:44px;height:44px;border-radius:14px;border:1.5px solid rgba(255,255,255,.2);background:rgba(20,23,30,.72);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit}
 .icon-btn[data-count]::after{content:attr(data-count);position:absolute;right:-5px;top:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--milk);color:#5a3d00;font-size:11px;font-weight:900;line-height:17px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .icon-btn:active{transform:scale(.94)}
 .icon-btn.ready{border-color:var(--milk);box-shadow:0 0 14px rgba(255,211,77,.6)}
 .icon-btn.dead{opacity:.35}
 
 .power-bar{position:absolute;left:10px;top:calc(58px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:6px;pointer-events:none}
-.power-item{display:flex;align-items:center;gap:7px;padding:5px 11px 5px 8px;border-radius:12px;background:rgba(20,23,30,.5);color:#fff;font-weight:800;font-size:12px;backdrop-filter:blur(6px);border:1.5px solid rgba(255,255,255,.16);min-width:132px}
+.power-item{display:flex;align-items:center;gap:7px;padding:5px 11px 5px 8px;border-radius:12px;background:rgba(20,23,30,.70);color:#fff;font-weight:800;font-size:12px;border:1.5px solid rgba(255,255,255,.16);min-width:132px}
 .power-item .bar{flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden}
 .power-item .bar i{display:block;height:100%;border-radius:4px;background:var(--milk);transition:width .12s linear}
 .power-item.p-magnet .bar i{background:#ff6b6b}
@@ -171,8 +178,8 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 
 /* ---------------- 开局操作示意（全图形） ---------------- */
 .howto{position:absolute;left:50%;top:calc(50% - 30px);transform:translate(-50%,-50%);width:min(92vw,660px);
-  padding:14px 16px;border-radius:24px;background:rgba(11,14,19,.88);border:2px solid rgba(255,255,255,.16);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:7;
+  padding:14px 16px;border-radius:24px;background:rgba(11,14,19,.94);border:2px solid rgba(255,255,255,.16);
+  z-index:7;
   animation:howtoIn .34s ease-out both}
 /* 示意卡是纯展示层，绝不能吃掉滑屏手势。
    .ui > * 那条规则把直接子元素都设成了 pointer-events:auto，
@@ -289,7 +296,7 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .menu-hero canvas{width:100%;height:100%;position:relative;z-index:2}
 .hero-shadow{position:absolute;bottom:5%;left:50%;transform:translateX(-50%);width:58%;height:22px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.55),transparent 70%)}
 .menu-stats{display:flex;gap:7px;flex-wrap:wrap;justify-content:center}
-.stat-pill{display:flex;align-items:center;gap:6px;padding:6px 13px;border-radius:11px;background:rgba(10,20,15,.72);font-weight:800;font-size:12.5px;color:#c6b795;border:1.5px solid rgba(233,220,190,.18);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.stat-pill{display:flex;align-items:center;gap:6px;padding:6px 13px;border-radius:11px;background:rgba(10,20,15,.84);font-weight:800;font-size:12.5px;color:#c6b795;border:1.5px solid rgba(233,220,190,.18)}
 .stat-pill b{font-size:15px;color:#f6e6c4}
 .menu-btns{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:2px;width:100%}
 /* 开跑按钮：一层呼吸光晕，把视线钉在这儿 */
@@ -317,6 +324,10 @@ canvas#gl.overlay2d{background:transparent;z-index:1;pointer-events:none}
 .about-text{font-size:11.5px;color:#8a9099;line-height:1.7}
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;font-weight:700;font-size:15px;border-bottom:1px solid #eef1f5}
 .setting-row:last-of-type{border-bottom:none}
+/* 性能读数：把"上一局到底多少帧 / 降没降档"直接摊给玩家看，
+   免得只能靠"感觉卡不卡"来回描述。
+   注意设置面板是浅色卡片，这里必须用深色字，别跟着 HUD 走浅色。 */
+.set-val{font-weight:800;font-size:12.5px;color:#4a5a68;opacity:.92;letter-spacing:.2px}
 /* 曲目行：左边一个会变的名字，右边一个小按钮 */
 .bgm-pick{display:flex;align-items:center;gap:8px}
 .bgm-now{font-size:13px;font-weight:900;color:var(--green-d);background:rgba(124,212,74,.16);padding:5px 10px;border-radius:10px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}

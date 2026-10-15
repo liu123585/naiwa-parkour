@@ -26,6 +26,17 @@ const Game = {
   init(canvas) {
     Store.load();
     Renderer.quality = Store.data.settings.quality;
+    /* 弱机型记忆：上一局跑完停在哪个档，这一局就从这个档起步。
+       不这么做的话，弱机每次开新局都要先卡十几秒、等自适应慢慢降下来，
+       玩家的第一印象永远是"这游戏好卡"。三个数值必须一起恢复：
+       dprScale（分辨率）、fxLow（省掉颗粒/描边）、fps.dprStep（升降档判据），
+       少恢复一个就会出现"显示低配但判据以为自己是满血"的错位。 */
+    const tier = Math.max(0, Math.min(2, Store.data.settings.perfTier || 0));
+    this.fps.dprStep = tier;
+    Renderer.dprScale = tier >= 2 ? 0.82 : (tier === 1 ? 0.90 : 1);
+    Renderer.fxLow = tier >= 2;
+    /* Pinch3D.init 要用它决定开不开 MSAA（见那边 init 里的注释） */
+    Renderer.perfTier = tier;
     Renderer.init(canvas);
     this.fps.quality = Store.data.settings.quality;
     this.bindInput();
@@ -144,6 +155,9 @@ const Game = {
     if (f.samples.length < 45 || this.state !== 'run') return;
     const avg = f.samples.reduce((a, b) => a + b, 0) / f.samples.length;
     f.avg = 1 / Math.max(0.0001, avg);
+    /* 留一份"上一局实机帧率"给设置面板显示。
+       以前玩家只能说"感觉卡"，看不出到底是掉帧还是画质降过头。 */
+    f.runAvg = f.avg;
     /* 这一层管的是画布分辨率（dprScale），2D / 3D 两条路都吃得到。
        同样必须两头都能走：旧版只有降档分支，dprStep 一旦加过就再也回不去，
        设备启动时抖一下，之后整局都是糊的。回升要求"明显高于阈值"（>56fps）
@@ -153,13 +167,17 @@ const Game = {
        "明明挺流畅，画面却像打了马赛克"。
        两档降幅也从 0.84/0.68 收到 0.90/0.82：0.68 太狠，
        而且它和 pinch3d 的 resScale 是相乘关系，两个一起降会糊到没法看。 */
+    /* lowFrames 从 50 收到 26：
+       50 帧≈0.9 秒的持续低帧才开始降，弱机开局的十几秒就全在卡。
+       26 帧≈0.45 秒，还是"连续低帧"而不是单帧抖动，不会误判。 */
     if (f.avg < 46) {
       f.goodFrames = 0;
       f.lowFrames++;
-      if (f.lowFrames > 50 && f.dprStep < 2) {
+      if (f.lowFrames > 26 && f.dprStep < 2) {
         f.dprStep++;
         Renderer.dprScale = f.dprStep === 1 ? 0.90 : 0.82;
         if (f.dprStep >= 2) Renderer.fxLow = true;
+        this._savePerfTier(f.dprStep);
         Renderer.resize(); f.lowFrames = 0;
       }
     } else {
@@ -170,9 +188,19 @@ const Game = {
           f.dprStep--;
           Renderer.dprScale = f.dprStep === 0 ? 1 : 0.90;
           if (f.dprStep < 2) Renderer.fxLow = false;
+          this._savePerfTier(f.dprStep);
           Renderer.resize(); f.goodFrames = 0;
         }
       } else f.goodFrames = 0;
+    }
+  },
+
+  /* 把当前自适应档位写进存档，下次启动直接从这个档起步 */
+  _savePerfTier(tier) {
+    Renderer.perfTier = tier;
+    if (Store.data.settings.perfTier !== tier) {
+      Store.data.settings.perfTier = tier;
+      Store.save();
     }
   },
 
@@ -302,7 +330,7 @@ const Game = {
            否则高速时会出现"人还差半米才到顶、车厢的扫掠窗口已经压过来"，
            collide 里按 py < h-0.18 判成正面撞车 —— 明明顺着楼梯上来的却撞死。 */
         const t = Utils.clamp((this.travel - o.worldZ) / Math.max(0.4, o.len - 0.45), 0, 1);
-        support = Math.max(support, b0 + t * ((o.climb || o.y1 || 1.35) - b0));
+        support = Math.max(support, b0 + t * ((o.climb || o.y1 || CFG.TRAIN_H.low) - b0));
         continue;
       }
       if (o.kind !== 'train') continue;
@@ -730,8 +758,8 @@ const Game = {
       let id;
       if (o.kind === 'train') {
         if (o.oncoming) id = 'oncoming';
-        else if (o.h <= 1.6) id = 'train_low';
-        else if (o.h <= 2.6) id = 'train_mid';
+        else if (o.h <= CFG.TRAIN_H.low + 0.2) id = 'train_low';
+        else if (o.h <= CFG.TRAIN_H.mid + 0.4) id = 'train_mid';
         else id = 'train_high';
       } else {
         id = CODEX_MAP[o.otype || o.type] || null;
@@ -979,7 +1007,7 @@ const Game = {
          以前 y1 只有 2.55、而画面上那根横杆挂在 1.72 米处，看着像能跨，
          玩家一跳发现过不去，就会觉得"碰撞没做"（反馈原话就是这个意思）。 */
       highbar: { hw: 1.15, len: 0.42, y0: 1.30, y1: 3.20 },
-      cone: { hw: 0.42, len: 0.5, y0: 0, y1: 0.66 },
+      cone: { hw: 0.50, len: 0.58, y0: 0, y1: 1.02 },
       spring: { hw: 0.85, len: 1.1, y0: 0, y1: 0.42, spring: true },
       /* ---- 新增障碍 ---- */
       tunnel: { hw: 1.18, len: 3.0, y0: 1.26, y1: 3.10 },                       // 限高隧道：必须滑铲
@@ -987,7 +1015,7 @@ const Game = {
          base 默认 0（从地面起步）；base>0 就是"从这节车厢爬到更高那节"的接力楼梯。
          len 在 addObstacle 里按爬升高度现算（坡度恒定 ≈17°），
          所以这里给的 len 只是个占位值。 */
-      stairs: { hw: 1.02, len: 4.4, y0: 0, y1: 1.35, stair: true, climb: 1.35, base: 0 },
+      stairs: { hw: 1.02, len: 4.4, y0: 0, y1: CFG.TRAIN_H.low, stair: true, climb: CFG.TRAIN_H.low, base: 0 },
       turnstile: { hw: 0.72, len: 0.45, y0: 0, y1: 2.20 },                      // 闸机：跳不过也滑不过，只能变道
       ramp: { hw: 0.90, len: 2.2, y0: 0, y1: 0.50, spring: true, ramp: true, launch: 12 },  // 斜坡：冲上去正好落到矮车厢顶
       sweeper: { hw: 0.55, len: 0.5, y0: 0, y1: 1.00, sweep: true },            // 横扫杆：左右摆动，掐时机跳过
@@ -997,11 +1025,11 @@ const Game = {
       gantry: { hw: 1.60, len: 0.30, y0: 0, y1: 4.00, decor: true },
     }[type];
     Object.assign(base, D, extra || {});
-    /* 楼梯的深度由"要爬多高"反推：climb 1.35 → 深 4.3 米（约 17°，是"缓行"）。
+    /* 楼梯的深度由"要爬多高"反推：climb = CFG.TRAIN_H.low(1.9) → 深 6.1 米（约 17°，是"缓行"）。
        太陡就成了跳板，太缓则一跑而过没有爬坡感。
        base>0 时爬升量是 (climb - base)，接力楼梯才不会莫名其妙变长。 */
     if (base.stair) {
-      base.climb = base.climb || 1.35;
+      base.climb = base.climb || CFG.TRAIN_H.low;
       base.base = base.base || 0;
       base.len = Math.max(2.8, (base.climb - base.base) * 3.2);
       base.y0 = base.base; base.y1 = base.climb;
@@ -1043,7 +1071,7 @@ const Gen = {
 
   reserve(lane, z0, z1) {
     this.reserved.push({
-      ghost: true, kind: 'train', x: Utils.laneX(lane), hw: 1.07, h: 3.3,
+      ghost: true, kind: 'train', x: Utils.laneX(lane), hw: 1.07, h: CFG.TRAIN_H.high,
       worldZ: z0, len: Math.max(0.6, z1 - z0),
     });
   },
@@ -1064,7 +1092,11 @@ const Gen = {
   passable(o) {
     if (o.decor || o.stair || o.spring || o.ramp) return true;
     if (o.kind === 'coin' || o.kind === 'power') return true;
-    if (o.kind === 'train') return o.h <= 1.6;      // 矮车厢能跳上车顶
+    /* 车厢：加高之后没有一节是能直接跳上车顶的了（最矮的 1.9 米，
+       跳跃最高点才 1.68 米），所以一律按"这条道走不通"处理 ——
+       生成器会因此保证每条带车厢的段落都另有一条空道。
+       想上车顶得靠斜坡 / 缓行楼梯 / 弹跳垫，那三样自己就是 passable。 */
+    if (o.kind === 'train') return false;
     if (o.sweep) return true;                        // 横扫杆掐时机能跳
     if ((o.y0 || 0) >= 1.2) return true;             // 上沿封顶型：滑铲能过
     return (o.y1 || 1.05) <= 1.1;                    // 矮障碍：跳过去
@@ -1180,15 +1212,15 @@ const Gen = {
     } },
     { id: 'lowTrain', w: () => 10, fn: (G) => {
       const lane = Utils.irand(0, 2), len = Utils.irand(16, 28);
-      Game.addTrain(G.z, lane, len, 1.35);
-      for (let i = 0; i < Math.floor(len / 2.4); i++) Game.addCoin(G.z + 3 + i * 2.4, G.laneX(lane), 1.9);
+      Game.addTrain(G.z, lane, len, CFG.TRAIN_H.low);
+      for (let i = 0; i < Math.floor(len / 2.4); i++) Game.addCoin(G.z + 3 + i * 2.4, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
       const other = (lane + 2) % 3;
       for (let i = 0; i < 4; i++) Game.addCoin(G.z + 4 + i * 2.2, G.laneX(other), 0.85);
       G.z += len + 11;
     } },
     { id: 'tallTrain', w: () => 12, fn: (G) => {
       const lane = Utils.irand(0, 2), len = Utils.irand(14, 26);
-      Game.addTrain(G.z, lane, len, 3.3);
+      Game.addTrain(G.z, lane, len, CFG.TRAIN_H.high);
       const other = (lane + 1) % 3;
       for (let i = 0; i < Math.floor(len / 2.4); i++) Game.addCoin(G.z + 3 + i * 2.4, G.laneX(other), 0.85);
       G.z += len + 10;
@@ -1197,7 +1229,7 @@ const Gen = {
       Game.markCodex({ otype: 'gap_train' });
       const free = Utils.irand(0, 2);
       const len = Utils.irand(16, 26);
-      for (let l = 0; l < 3; l++) if (l !== free) Game.addTrain(G.z, l, len, 3.3);
+      for (let l = 0; l < 3; l++) if (l !== free) Game.addTrain(G.z, l, len, CFG.TRAIN_H.high);
       for (let i = 0; i < Math.floor(len / 2.4); i++) Game.addCoin(G.z + 3 + i * 2.4, G.laneX(free), 0.85);
       G.z += len + 12;
     } },
@@ -1205,8 +1237,8 @@ const Gen = {
       const lane = Utils.irand(0, 2);
       Game.addObstacle('spring', lane, { worldZ: G.z, spring: true, launch: 15.5 });
       const len = Utils.irand(18, 26);
-      Game.addTrain(G.z + 4.5, lane, len, 2.25);
-      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 8 + i * 2.3, G.laneX(lane), 2.8);
+      Game.addTrain(G.z + 4.5, lane, len, CFG.TRAIN_H.mid);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 8 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.mid + 0.55);
       G.z += len + 14;
     } },
     { id: 'coneLine', w: () => 7, fn: (G) => {
@@ -1227,7 +1259,7 @@ const Gen = {
       const len = 22;
       const vz = 17 + 10 * Gen.diffGuess;
       const spawn = G.z + 120;
-      const t = Game.addTrain(spawn, lane, len, 3.3, { vz, headlight: true });
+      const t = Game.addTrain(spawn, lane, len, CFG.TRAIN_H.high, { vz, headlight: true });
       t.oncoming = true;
       /* 报警不能在生成的时候喊 —— 生成点在 120 米外、而生成游标本身
          还在玩家前面 160 米，加起来这节车厢要 3~5 秒才追到脸上。
@@ -1254,17 +1286,17 @@ const Gen = {
     } },
     { id: 'roofLong', w: () => 8, fn: (G) => {
       const lane = Utils.irand(0, 2), len = Utils.irand(30, 44);
-      Game.addTrain(G.z, lane, len, 1.35);
+      Game.addTrain(G.z, lane, len, CFG.TRAIN_H.low);
       Game.addObstacle('spring', (lane + 2) % 3, { worldZ: G.z - 4, spring: true, launch: 13.5 });
-      for (let i = 0; i < Math.floor(len / 2.2); i++) Game.addCoin(G.z + 3 + i * 2.2, G.laneX(lane), 1.9);
-      Game.addPower(G.z + len * 0.6, G.laneX(lane), 2.9, Utils.pick(POWERS).id);
+      for (let i = 0; i < Math.floor(len / 2.2); i++) Game.addCoin(G.z + 3 + i * 2.2, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
+      Game.addPower(G.z + len * 0.6, G.laneX(lane), CFG.TRAIN_H.low + 1.0, Utils.pick(POWERS).id);
       G.z += len + 12;
     } },
     { id: 'mixedLow', w: () => 6 + Gen.diffGuess * 6, fn: (G) => {
       const a = Utils.irand(0, 2), b = (a + 1) % 3;
-      Game.addTrain(G.z, a, 18, 1.35);
+      Game.addTrain(G.z, a, 18, CFG.TRAIN_H.low);
       Game.addObstacle('highbar', b, { worldZ: G.z + 6 });
-      for (let i = 0; i < 6; i++) Game.addCoin(G.z + 2 + i * 2.3, G.laneX(a), 1.9);
+      for (let i = 0; i < 6; i++) Game.addCoin(G.z + 2 + i * 2.3, G.laneX(a), CFG.TRAIN_H.low + 0.55);
       G.z += 28;
     } },
     /* ---------- 新增段落 ---------- */
@@ -1294,8 +1326,8 @@ const Gen = {
     { id: 'rampRoof', w: () => 8, fn: (G) => {
       const lane = Utils.irand(0, 2), len = Utils.irand(14, 22);
       Game.addObstacle('ramp', lane, { worldZ: G.z });
-      Game.addTrain(G.z + 2.6, lane, len, 1.35);
-      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 6 + i * 2.3, G.laneX(lane), 1.9);
+      Game.addTrain(G.z + 2.6, lane, len, CFG.TRAIN_H.low);
+      for (let i = 0; i < Math.floor(len / 2.3); i++) Game.addCoin(G.z + 6 + i * 2.3, G.laneX(lane), CFG.TRAIN_H.low + 0.55);
       G.z += len + 13;
     } },
     /* 缓行楼梯：不用跳、不用弹射，直接一路跑上车顶。
@@ -1305,7 +1337,7 @@ const Gen = {
        否则车体会和梯段错开，出现"爬到头发现前面还有一米空隙"的断崖。 */
     { id: 'stairsRoof', w: () => 9 + Gen.diffGuess * 7, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      const h = Utils.pick([1.35, 1.35, 1.35, 2.25]);     // 以矮车厢为主，偶尔来一节中车厢
+      const h = Utils.pick([CFG.TRAIN_H.low, CFG.TRAIN_H.low, CFG.TRAIN_H.low, CFG.TRAIN_H.mid]);     // 以矮车厢为主，偶尔来一节中车厢
       const len = Utils.irand(18, 30);
       const st = Math.max(2.8, h * 3.2);                  // 楼梯深度（和 addObstacle 同一公式）
       Game.addObstacle('stairs', lane, { worldZ: G.z, climb: h });
@@ -1325,7 +1357,7 @@ const Gen = {
        第二段楼梯的 base 必须等于前一段的 climb，不然中间会断出个悬崖。 */
     { id: 'doubleRoof', w: () => Gen.diffGuess > 0.18 ? 4 + Gen.diffGuess * 8 : 0, fn: (G) => {
       const lane = Utils.irand(0, 2);
-      const h1 = 1.35, h2 = 2.70;
+      const h1 = CFG.TRAIN_H.low, h2 = CFG.TRAIN_H.low + 1.0;
       const st1 = Math.max(2.8, h1 * 3.2);
       const st2 = Math.max(2.8, (h2 - h1) * 3.2);
       const len1 = Utils.irand(12, 16), len2 = Utils.irand(14, 20);
@@ -1375,7 +1407,7 @@ const Gen = {
         for (let l = 0; l < 3; l++) {
           if (l === free) continue;
           if (Math.random() < 0.22) continue;              // 留点变数，别每次封满
-          Game.addTrain(G.z + i * 13, l, 9, 3.3);
+          Game.addTrain(G.z + i * 13, l, 9, CFG.TRAIN_H.high);
         }
         for (let c = 0; c < 4; c++) Game.addCoin(G.z + i * 13 + c * 1.9, G.laneX(free), 0.85);
         free = (free + (Math.random() < 0.5 ? 1 : 2)) % 3; // 缝换到另一条道

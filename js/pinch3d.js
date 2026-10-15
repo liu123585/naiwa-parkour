@@ -75,13 +75,21 @@ const Pinch3D = {
   /* ---------------- 初始化 ---------------- */
   init(canvas) {
     if (typeof THREE === 'undefined') { this.ready = false; return false; }
+    /* MSAA 开关按机型定，不能一律开着。
+       antialias:true 走 4x 多重采样，手机上等于把填充带宽再乘四 ——
+       同样的分辨率，关掉它常常能多出三到五成帧率。
+       判据用「弱机型记忆」（Renderer.perfTier，见 game.js 的 init）：
+         · 上一局已经降到最低档 → 这台机器是真带不动，直接关 MSAA
+         · 画质手动选了「低」→ 玩家自己说了要流畅
+       其余情况维持开着：MSAA 买到的是最显眼的观感提升（箱体边缘不再全是锯齿），
+       能跑动的机器上这笔账依然划算。
+       注意 MSAA 只能在创建 WebGL 上下文时决定，运行中改不了 ——
+       所以它跟随的是"上一次运行"的结果，当次降档不会立刻生效。 */
+    const weakGPU = (Renderer.perfTier >= 2) || Renderer.quality === 'low';
+    this.msaa = !weakGPU;
     try {
       this.renderer = new THREE.WebGLRenderer({
-        /* antialias 开着。老版为了省性能关了，代价是所有的箱体边缘全是锯齿，
-           本来就偏低的分辨率再叠一层锯齿，观感就是"马赛克"。
-           DPR_MAX 提上去之后，MSAA 的开销相对可接受，而且它买到的是
-           最显眼的观感提升，这笔账划算。 */
-        canvas: canvas, antialias: true, alpha: false,
+        canvas: canvas, antialias: !weakGPU, alpha: false,
         powerPreference: 'high-performance', stencil: false,
       });
     } catch (e) {
@@ -1054,11 +1062,23 @@ const Pinch3D = {
             R.box(x - 0.8 + i * 0.4, 1.05, z, 0.4, 0.22, 0.10, i % 2 ? '#e0413d' : '#f2ece0', { flat: true });
           }
           break;
-        case 'cone':      /* 黏土交通锥 */
-          R.put(R.take(R.g.cone, R.matte('#ff7a1a', { flat: true })), x, 0.33, z, 0.62, 0.66, 0.62);
-          R.box(x, 0.04, z, 0.72, 0.07, 0.72, '#d45a0c', { flat: true });
-          R.box(x, 0.42, z, 0.40, 0.10, 0.40, '#f5f2ea', { flat: true });
+        case 'cone': {    /* 黏土交通锥（反馈"地刺不明显"说的就是它）
+                             旧版：高 0.66 米、通体 #ff7a1a，压在土黄色道床上，
+                             远处只剩三四个橘色像素，跟地面的暖棕几乎同色，
+                             玩家根本来不及反应。现在：
+                               · 拔高到 1.02 米、底座加宽到 0.84（远处轮廓大一圈）
+                               · 两道白色反光带改成 unlit（自发光）—— 白天不脏、
+                                 夜里不打折，不管什么地图配色都是画面里最亮的白
+                               · 底座压深成 #a8380a 的方块，先给一块"这里有个东西"的
+                                 暗色脚垫，轮廓比纯橘色更跳
+                               · 尖端加个小黄帽，跟金币同色系但形状不同，不会认错 */
+          R.put(R.take(R.g.cone, R.matte('#ff6a10', { flat: true })), x, 0.53, z, 0.84, 1.06, 0.84);
+          R.box(x, 0.05, z, 0.96, 0.10, 0.96, '#a8380a', { flat: true });
+          R.box(x, 0.32, z, 0.62, 0.16, 0.62, '#fdfcf7', { unlit: true });
+          R.box(x, 0.58, z, 0.44, 0.12, 0.44, '#fdfcf7', { unlit: true });
+          R.box(x, 0.94, z, 0.15, 0.14, 0.15, '#ffd34d', { unlit: true });
           break;
+        }
         case 'dumpster':  /* 绿色纸箱垃圾桶 */
           R.box(x, 0.62, z, 1.5, 1.24, 1.3, '#4a8a46', { flat: true });
           R.box(x, 1.30, z, 1.58, 0.15, 1.38, '#3a6b37', { flat: true });
@@ -1508,7 +1528,12 @@ const Pinch3D = {
     if (this.noAutoPerf) return;
     this._ft += dt; this._fn++;
     if (dt > (this._worst || 0)) this._worst = dt;
-    if (this._ft < 2.0) return;
+    /* 窗口 2.0 → 1.0 秒。
+       2 秒才判一次、一次只降 5%，从满血降到下限要 6 步 ≈ 12 秒 ——
+       弱机开局的十几秒全在卡，玩家的结论就是"这游戏卡"。
+       现在 1 秒判一次、一步 7%（1.0 → 0.86 只要 2 秒），
+       抖动该收敛的几百毫秒内就收敛完。 */
+    if (this._ft < 1.0) return;
 
     const avg = this._ft / Math.max(1, this._fn);
     const worst = this._worst || avg;
@@ -1519,11 +1544,17 @@ const Pinch3D = {
        两个一起降的时候是相乘的（0.68 × 0.62 ≈ 0.42），
        叠上本来就偏低的 DPR_MAX，最终分辨率只剩屏幕的一半不到 —— 就是马赛克。
        宁可少省这一点性能，也不能把画面糊掉。 */
-    const STEP = 0.05, LO = 0.86, HI = 1.0;
+    const STEP = 0.07, LO = 0.86, HI = 1.0;
     let rs = this.resScale || 1;
 
-    if (worst > 0.048 || avg > 0.026) {
-      /* 有肉眼可见的长帧（>48ms）或平均掉到 38fps 以下 → 降一档 */
+    /* 判据跟着窗口一起收紧。窗口从 2 秒缩到 1 秒之后，秒内帧数只剩一半，
+       同一根"长帧"在 1 秒窗口里的杀伤力翻倍 —— 还按 0.048 判，
+       一次 GC 停顿就会连降好几档，直接把画面糊掉。
+       所以按 1 秒窗口重新标定：
+         平均 < 42fps（0.024）说明是真的持续带不动 → 降
+         出现 > 13fps 的长帧（0.075）说明有卡顿块 → 降
+       回升依旧要求"整秒没有一根慢于 38fps 的帧"，且连续两个窗口都稳。 */
+    if (worst > 0.075 || avg > 0.024) {
       rs = Math.max(LO, rs - STEP);
       this._good = 0;
     } else if (worst < 0.026 && avg < 0.0195) {

@@ -68,6 +68,9 @@ const Renderer = {
   sprites: {},
   quality: 'mid',
   dprScale: 1, fxLow: false,
+  /* 弱机型记忆档位（0/1/2），由 game.js init 从存档恢复、trackFps 写回。
+     Pinch3D.init 拿它决定开不开 MSAA。 */
+  perfTier: 0,
 
   init(canvas) {
     this.canvas = canvas;
@@ -825,16 +828,22 @@ const Renderer = {
         this.fillQuad([mix(A, D, 0), mix(B, C, 0), mix(B, C, 0.12), mix(A, D, 0.12)], 'rgba(0,0,0,.25)');
       }
     } else if (o.type === 'cone') {
+      /* 交通锥：和 3D 那套保持同一套比例（1.02 米高、0.84 宽 + 两道自发光白带），
+         以前 0.62 米高、橘色压在土黄道床上，远处根本认不出来。 */
       const p = this.proj(o.x, 0, o.z);
       if (!p) return;
-      const h = 0.62 * p.s, w = 0.42 * p.s;
-      c.fillStyle = '#ff7a1a';
-      c.beginPath(); c.moveTo(p.sx, p.sy - h); c.lineTo(p.sx + w / 2, p.sy); c.lineTo(p.sx - w / 2, p.sy); c.closePath(); c.fill();
-      c.fillStyle = '#fff';
-      c.fillRect(p.sx - w * 0.3, p.sy - h * 0.55, w * 0.6, h * 0.16);
-      this.fillQuad([{ sx: p.sx - w * 0.6, sy: p.sy }, { sx: p.sx + w * 0.6, sy: p.sy }], 'rgba(0,0,0,0)');
-      c.fillStyle = 'rgba(0,0,0,.25)';
-      c.beginPath(); c.ellipse(p.sx, p.sy, w * 0.62, w * 0.2, 0, 0, Math.PI * 2); c.fill();
+      const h = 1.02 * p.s, w = 0.84 * p.s;
+      c.fillStyle = 'rgba(0,0,0,.28)';
+      c.beginPath(); c.ellipse(p.sx, p.sy, w * 0.60, w * 0.20, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#a8380a';
+      c.fillRect(p.sx - w * 0.57, p.sy - h * 0.09, w * 1.14, h * 0.09);
+      c.fillStyle = '#ff6a10';
+      c.beginPath(); c.moveTo(p.sx, p.sy - h); c.lineTo(p.sx + w / 2, p.sy - h * 0.09); c.lineTo(p.sx - w / 2, p.sy - h * 0.09); c.closePath(); c.fill();
+      c.fillStyle = '#fdfcf7';
+      c.fillRect(p.sx - w * 0.36, p.sy - h * 0.46, w * 0.72, h * 0.15);
+      c.fillRect(p.sx - w * 0.26, p.sy - h * 0.69, w * 0.52, h * 0.12);
+      c.fillStyle = '#ffd34d';
+      c.fillRect(p.sx - w * 0.09, p.sy - h * 0.99, w * 0.18, h * 0.13);
     } else if (o.type === 'spring') {
       const F = this.boxFaces({ x0: o.x - 0.85, x1: o.x + 0.85, y0: 0, y1: 0.42, z0: o.z, z1: o.z + 1.1 });
       if (!F) return;

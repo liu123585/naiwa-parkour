@@ -41,7 +41,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
       G.dying = 0;
       G.invuln = 0;
       G.shake = 0;
-      G.powers = { magnet: 0, jet: 0, x2: 0, shoe: 0, board: 0, shield: 0 };
+      G.powers = { magnet: 0, jet: 0, x2: 0, shoe: o.shoe ? 99 : 0, board: 0, shield: 0 };
       G.chase = { hits: 0, grace: 0, active: false };
       G.chaser = { on: false, dist: 9, mode: 'idle', t: 0 };
       G.diff = { id: 'normal', speedStart: o.speed, speedMax: o.speed, accel: 0, scoreMul: 1, name: 't' };
@@ -106,7 +106,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     /* ---- 3. 迎面列车（相对 78m/s）——旧版一定穿模 ---- */
     r = run({
       speed: 47, dt: 1 / 30, px: 0, frames: 90,
-      obs: [{ kind: 'train', lane: 1, z: 105, len: 22, h: 3.3, opts: { vz: 31, headlight: true, oncoming: true } }],
+      obs: [{ kind: 'train', lane: 1, z: 105, len: 22, h: CFG.TRAIN_H.high, opts: { vz: 31, headlight: true, oncoming: true } }],
     });
     add('迎面列车 78m/s 对撞', 'hit', r.hit ? 'hit' : 'pass');
 
@@ -118,13 +118,19 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 120, rollAt: 992, obs: [{ type: 'highbar', lane: 1, z: 14 }] });
     add('滑铲过高栏', 'pass', r.hit ? 'hit' : 'pass');
 
-    /* ---- 6. 跳上车顶 ---- */
-    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, jumpAt: 1000, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: 1.35 }] });
-    add('跳上低车厢顶', 'pass', r.hit ? 'hit' : 'pass');
-    add('车顶被识别', 'yes', r.onRoof || r.roofs > 0 ? 'yes' : 'no');
+    /* ---- 6. 矮车厢加高到 1.9 米之后，光靠腿跳不上车顶了 ----
+       跳跃最高点 = 10.2²/(2×31) ≈ 1.68 米 < 1.9 - 0.18 容差，必撞。
+       这正是"我根本不能直接一下子蹦上去"要的效果。 */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, jumpAt: 1000, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });
+    add('裸跳 1.9m 车厢顶（应撞）', 'hit', r.hit ? 'hit' : 'pass');
+
+    /* ---- 6b. 换成跑鞋（跳 13.2 → 顶点 2.81m）照样能上顶，路没被堵死 ---- */
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, jumpAt: 1000, shoe: true, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });
+    add('跑鞋跳上 1.9m 车厢顶', 'pass', r.hit ? 'hit' : 'pass');
+    add('跑鞋上顶被识别', 'yes', r.onRoof || r.roofs > 0 ? 'yes' : 'no');
 
     /* ---- 7. 不跳，侧撞低车厢 ---- */
-    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: 1.35 }] });
+    r = run({ speed: 40, dt: 1 / 60, px: 0, frames: 150, obs: [{ kind: 'train', lane: 1, z: 10, len: 24, h: CFG.TRAIN_H.low }] });
     add('侧撞车厢', 'hit', r.hit ? 'hit' : 'pass');
 
     /* ---- 8. 相邻车道的障碍不该误伤 ---- */
@@ -154,8 +160,8 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     /* ---- 14. 缓行楼梯：不跳不滑，直接跑上车顶 ---- */
     r = run({
       speed: 40, dt: 1 / 60, px: 0, frames: 200,
-      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
-            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: CFG.TRAIN_H.low } },
+            { kind: 'train', lane: 1, z: 10 + CFG.TRAIN_H.low * 3.2, len: 24, h: CFG.TRAIN_H.low }],
     });
     add('走楼梯上车顶', 'pass', r.hit ? 'hit' : 'pass');
     add('楼梯上到车顶', 'yes', r.onRoof || r.roofs > 0 ? 'yes' : 'no');
@@ -163,14 +169,14 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     /* ---- 15. 楼梯只有一格宽：站隔壁道不该被托上去 ---- */
     r = run({
       speed: 40, dt: 1 / 60, px: LANE(0), frames: 200,
-      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
-            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: CFG.TRAIN_H.low } },
+            { kind: 'train', lane: 1, z: 10 + CFG.TRAIN_H.low * 3.2, len: 24, h: CFG.TRAIN_H.low }],
     });
     add('隔壁道不被楼梯托起', 'no', r.y > 0.3 ? 'yes' : 'no');
 
     /* ---- 16. 双层车顶：楼梯 → 矮车厢 → 楼梯 → 高车厢，全程不该撞 ---- */
     {
-      const h1 = 1.35, h2 = 2.70;
+      const h1 = CFG.TRAIN_H.low, h2 = CFG.TRAIN_H.low + 1.0;
       const st1 = Math.max(2.8, h1 * 3.2), st2 = Math.max(2.8, (h2 - h1) * 3.2);
       r = run({
         speed: 40, dt: 1 / 60, px: 0, frames: 300,
@@ -182,14 +188,14 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
         ],
       });
       add('双层车顶全程不撞', 'pass', r.hit ? 'hit' : 'pass');
-      add('双层爬到 2.7 米高', 'yes', r.maxY > 2.3 ? 'yes' : 'no');
+      add('双层爬到顶', 'yes', r.maxY > CFG.TRAIN_H.low + 0.4 ? 'yes' : 'no');
     }
 
     /* ---- 17. 高速 + 掉帧上楼梯：最容易出现"差半米没到顶就被判撞车" ---- */
     r = run({
       speed: 47, dt: 1 / 30, px: 0, frames: 120,
-      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: 1.35 } },
-            { kind: 'train', lane: 1, z: 10 + 1.35 * 3.2, len: 24, h: 1.35 }],
+      obs: [{ type: 'stairs', lane: 1, z: 10, extra: { climb: CFG.TRAIN_H.low } },
+            { kind: 'train', lane: 1, z: 10 + CFG.TRAIN_H.low * 3.2, len: 24, h: CFG.TRAIN_H.low }],
     });
     add('掉帧高速上楼梯', 'pass', r.hit ? 'hit' : 'pass');
 
@@ -244,7 +250,7 @@ const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
     }
     return {
       barrier: trace({ speed: 47, dt: 1 / 30, z: 12 }),
-      oncoming: trace({ speed: 47, dt: 1 / 30, z: 105, kind: 'train', len: 22, h: 3.3, vz: 31 }),
+      oncoming: trace({ speed: 47, dt: 1 / 30, z: 105, kind: 'train', len: 22, h: CFG.TRAIN_H.high, vz: 31 }),
     };
   });
   console.log('\n=== 旧版瞬时窗口是否够用 ===');

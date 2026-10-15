@@ -712,6 +712,25 @@ const UI = {
     const set = (id, on) => document.getElementById(id).classList.toggle('on', !!on);
     set('setSfx', s.sfx); set('setMusic', s.music); set('setVibe', s.vibe); set('setTips', s.tips);
     document.querySelectorAll('#setQuality button').forEach(b => b.classList.toggle('on', b.dataset.q === s.quality));
+    /* 性能读数。显示三件事：上一局实机平均帧率、当前有效分辨率、
+       自动降档档位。有了它，"卡"就不再是一句感觉 —— 是 38fps 还是降过头糊了，
+       一眼能看出来。 */
+    const fpsEl = document.getElementById('setFps');
+    if (fpsEl) {
+      const avg = Math.round((Game.fps && Game.fps.runAvg) || 0);
+      if (!avg) fpsEl.textContent = '跑一局后显示';
+      else {
+        const cv = Renderer.canvas;
+        const wan = cv ? Math.round(cv.width * cv.height / 10000) : 0;
+        const tier = (Game.fps && Game.fps.dprStep) || 0;
+        const rs = (typeof Pinch3D !== 'undefined' && Pinch3D.resScale) ? Pinch3D.resScale : 1;
+        let txt = avg + ' fps · ' + wan + ' 万像素';
+        if (tier > 0) txt += ' · 已自动降档 ' + tier + '/2';
+        if (rs < 0.999) txt += ' · 分辨率 ' + Math.round(rs * 100) + '%';
+        if (typeof Pinch3D !== 'undefined' && Pinch3D.msaa === false) txt += ' · 关抗锯齿';
+        fpsEl.textContent = txt;
+      }
+    }
     /* 音源档位：显示的是"实际会响的那个"。浏览器不支持 MP3 时
        即便存档里选着 file，也要如实显示成八音盒，别骗玩家。 */
     const src = (typeof Sound !== 'undefined' && Sound.activeSrc) ? Sound.activeSrc() : 'synth';
@@ -814,6 +833,9 @@ const UI = {
         Store.save();
         Game.applySettings();
         Renderer.dprScale = 1; Renderer.fxLow = false; Game.fps.dprStep = 0;
+        /* 手动改画质等于重新开始学：把"弱机型记忆"也归零，
+           否则下次启动会把上一个档位又套回来，玩家会觉得设置没生效。 */
+        if (Game._savePerfTier) Game._savePerfTier(0);
         this.buildSettings();
         Sound.ui();
       };

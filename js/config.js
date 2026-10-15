@@ -13,6 +13,20 @@ const CFG = {
   RAIL_HALF: 0.66,        // 单条铁轨半宽（每条车道两根轨）
   SLEEPER_GAP: 2.6,       // 枕木间距
   FAR: 190,               // 最远绘制距离
+
+  /* ---------------- 车厢高度（米） ----------------
+     这三个数直接决定"能不能跳上去"：
+     跳跃最高点 = JUMP_V² / (2·GRAVITY) = 10.2² / (2×31) ≈ 1.68 米，
+     落地判定再留 0.18 米容差，所以顶面高于 1.86 米的，光靠腿是上不去的。
+     旧版矮车厢只有 1.35 米 —— 抬脚就站上车顶，车厢看着像一堵矮墙，
+     反馈原话："那个火车正常情况下我根本不能直接一下子蹦上去，
+     你要把他的高度改的高一点，看起来高一点"。
+     现在 1.9 米：想上车顶必须走斜坡 / 缓行楼梯 / 弹跳垫，
+     或者穿跑鞋（跳 2.81 米）—— 三条路都还在，只是不能白捡了。
+     改这三个数务必同步 CFG.TRAIN_JUMP_MAX 和生成器里所有 addTrain 的高度。 */
+  TRAIN_H: { low: 1.9, mid: 2.6, high: 3.5 },
+  /* 光靠腿跳不上去的顶面高度下限（= 跳跃最高点 - 落地容差 + 一点余量） */
+  TRAIN_JUMP_MAX: 1.86,
   NEAR: 0.55,
 
   CAM_BACK: 9.6,          // 摄像机在角色后方距离
@@ -290,7 +304,11 @@ const DEFAULT_SAVE = {
   skills: { magnet: 0, jet: 0, shoe: 0, board: 0, revive: 0 },
   boardCount: 3,          // 悬浮板库存
   /* musicSrc: 'synth' = 实时合成的八音盒（默认），'file' = CC0 原声 MP3 */
-  settings: { sfx: true, music: true, musicSrc: 'synth', vibe: true, quality: 'mid', tips: true },
+  settings: { sfx: true, music: true, musicSrc: 'synth', vibe: true, quality: 'mid', tips: true,
+    /* 弱机型记忆：上次跑完停在哪个自适应档位（0=没降过 / 1=降一档 / 2=降到底）。
+       下次启动直接按这个档起步，省掉开头十几秒"边卡边降"的过程。
+       换设备、换浏览器都是新存档，不会串。 */
+    perfTier: 0 },
   missions: null,          // { date:'2026-09-26', list:[{id,idx,progress,done,claimed}] }
   achClaimed: [],
   runs_log: [],
