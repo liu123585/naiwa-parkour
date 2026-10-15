@@ -4,12 +4,15 @@
      ③ 碰一下之后（已经淡出）
    前置：npm run serve（默认 8899 端口）
    用法: node tools/shot-howto.js
+         node tools/shot-howto.js --url=https://run.liuyushan.top   # 直接验线上
    产物: .shots/howto-mobile-*.png */
 'use strict';
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const OUT = '.shots';
+const arg = process.argv.find((a) => a.startsWith('--url='));
+const BASE = arg ? arg.slice(6).replace(/\/$/, '') : 'http://localhost:8899';
 
 (async () => {
   if (!fs.existsSync(OUT)) fs.mkdirSync(OUT, { recursive: true });
@@ -25,7 +28,7 @@ const OUT = '.shots';
   const errs = [];
   page.on('pageerror', (e) => errs.push(String((e && e.message) || e)));
 
-  await page.goto('http://localhost:8899/?q=high&noperf=1', { waitUntil: 'load', timeout: 30000 });
+  await page.goto(BASE + '/?q=high&noperf=1', { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2600);
 
   /* 菜单 → 点开跑（跟玩家的路径一致，顺便验证 click 不会当场把卡关掉） */
